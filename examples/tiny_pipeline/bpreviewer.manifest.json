@@ -1,0 +1,14 @@
+{
+  "version": "1", "description": "人工声明的合成数值数据流；不是运行记录。", "require_dag": true,
+  "graph": {
+    "nodes": [
+      {"id": "logical:load", "label": "载入数值", "kind": "declared", "ports": [{"id": "value", "io": "output", "data_type": "number", "schema_ref": "number@1", "description": "合成数值输出；声明证据。"}]},
+      {"id": "logical:summary", "label": "汇总数值", "kind": "declared", "ports": [
+        {"id": "A", "io": "input", "data_type": "number", "schema_ref": "number@1", "multiplicity": "one", "description": "输入 A；可在 Proposed 将来源重连至 B。"},
+        {"id": "B", "io": "input", "data_type": "number", "schema_ref": "number@1", "multiplicity": "one", "description": "输入 B；重连只生成变更需求，不修改 Python。"},
+        {"id": "result", "io": "output", "data_type": "number", "schema_ref": "number@1", "description": "声明的汇总输出。"}
+      ]}
+    ],
+    "edges": [{"id": "declared:load-summary", "source": "logical:load", "source_port": "value", "target": "logical:summary", "target_port": "A", "kind": "data"}]
+  }
+}

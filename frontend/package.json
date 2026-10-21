@@ -1,0 +1,32 @@
+{
+  "name": "bp-reviewer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
+    "build": "tsc -b && vite build",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": "24.15.0",
+    "npm": "11.16.0"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "3.1.1",
+    "@xyflow/react": "12.12.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.0.1",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "6.1.2",
+    "jsdom": "25.0.1",
+    "typescript": "5.6.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}
