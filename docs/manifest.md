@@ -1,0 +1,13 @@
+# Project manifest and evidence
+
+`bpreviewer.manifest.json` is optional. A missing manifest never falls back to another project. It is a bounded, relative JSON file; absolute paths, traversal and symlinks/junctions are refused. The live schema is `GET /api/manifest-schema` with the local token; the same schema is generated in `manifest.schema.json`.
+
+The manifest has `version: "1"`, `graph: {nodes, edges}` and `require_dag`. IDs must be unique and distinct from `file:<relative-path>` scanned IDs. Nodes provide ports (ID, input/output, optional type/schema, required, one/many, semantic attributes), parameters and descriptions. Edges identify both node IDs and port IDs and distinguish `data` from `control`. See `examples/tiny_pipeline/bpreviewer.manifest.json`.
+
+All manifest evidence is forced to DECLARED with the real manifest SHA256. AST relations are STATIC_INFERRED, proposals UNVERIFIED. There is currently no runtime-event ingestion adapter; no static scan generates RUN_OBSERVED. Users must supply independent, verifiable runtime evidence before a future adapter can produce that status. Parsed calls are conservative candidates, not actual execution or reconstructed argument dataflow. Class methods, decorators, rebinding, dynamic imports and framework behavior may be incomplete or uncertain. Supply explicit semantics where needed. There is no fabricated six-model workflow or scientific runner.
+
+Default scan bounds: 1,000 Python files, 5,000 scanned nodes, 12 directory levels, 1 MB/file; 6,000 total nodes/20,000 edges after manifest. Oversized graphs fail; partial file/depth scans display warnings. Hidden/data/runtime/dependency/build directories and links are excluded. Python syntax errors are reported without executing source. Ordinary arguments/returns without complete contracts remain unknown; even matching annotations alone do not prove compatibility.
+
+Source inspection displays indexed path, line and SHA256. Current content is rechecked; a changed hash is shown as stale and needs rescanning. Snapshots are immutable by content ID; Git HEAD is read only when the selected root has its own `.git`. HEAD is not a guarantee of a clean target tree; source hashes are the content evidence.
+
+State belongs to BP-Reviewer and must be outside all inspected projects. Drafts are keyed by project+snapshot hash and updated with an optimistic revision. A changed snapshot starts a distinct draft. Change Requests ignore node coordinates, record full before/after contracts and endpoints, direct downstream impact, baseline HEAD/evidence, assumptions and manual approval requirements. Exports include validation errors rather than silently rewriting an invalid proposal.

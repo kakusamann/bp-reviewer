@@ -1,0 +1,298 @@
+{
+  "$defs": {
+    "Edge": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "source_port": {
+          "title": "Source Port",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "target_port": {
+          "title": "Target Port",
+          "type": "string"
+        },
+        "kind": {
+          "default": "data",
+          "enum": [
+            "data",
+            "control",
+            "import",
+            "contains"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "status": {
+          "default": "UNVERIFIED",
+          "enum": [
+            "STATIC_INFERRED",
+            "UNVERIFIED",
+            "DECLARED",
+            "RUN_OBSERVED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "source_port",
+        "target",
+        "target_port"
+      ],
+      "title": "Edge",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "line": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Line",
+          "type": "integer"
+        },
+        "sha256": {
+          "default": "",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "status": {
+          "default": "STATIC_INFERRED",
+          "enum": [
+            "STATIC_INFERRED",
+            "UNVERIFIED",
+            "DECLARED",
+            "RUN_OBSERVED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Graph": {
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "maxItems": 6000,
+          "title": "Nodes",
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/Edge"
+          },
+          "maxItems": 20000,
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "title": "Graph",
+      "type": "object"
+    },
+    "Node": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "kind": {
+          "default": "module",
+          "title": "Kind",
+          "type": "string"
+        },
+        "parent": {
+          "default": "",
+          "title": "Parent",
+          "type": "string"
+        },
+        "ports": {
+          "items": {
+            "$ref": "#/$defs/Port"
+          },
+          "title": "Ports",
+          "type": "array"
+        },
+        "parameters": {
+          "title": "Parameters",
+          "type": "object"
+        },
+        "position": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Position",
+          "type": "object"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "title": "Node",
+      "type": "object"
+    },
+    "Port": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "title": "Label",
+          "type": "string"
+        },
+        "io": {
+          "enum": [
+            "input",
+            "output"
+          ],
+          "title": "Io",
+          "type": "string"
+        },
+        "data_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data Type"
+        },
+        "schema_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema Ref"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "multiplicity": {
+          "default": "many",
+          "enum": [
+            "one",
+            "many"
+          ],
+          "title": "Multiplicity",
+          "type": "string"
+        },
+        "semantics": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Semantics",
+          "type": "object"
+        },
+        "description": {
+          "default": "未知类型需人工确认；静态关系不代表实际执行。",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "io"
+      ],
+      "title": "Port",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "1",
+      "default": "1",
+      "enum": [
+        "1"
+      ],
+      "title": "Version",
+      "type": "string"
+    },
+    "graph": {
+      "$ref": "#/$defs/Graph"
+    },
+    "require_dag": {
+      "default": true,
+      "title": "Require Dag",
+      "type": "boolean"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    }
+  },
+  "required": [
+    "graph"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}
