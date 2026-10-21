@@ -52,4 +52,8 @@ npm test
 npm run build
 ```
 
-[后端职责](backend/README.md)、[前端说明](frontend/README.md)、[测试覆盖](tests/README.md)。贡献时同步受影响目录 README，添加有意义的合成测试；不要引入对目标包的 import、自动执行、密钥或科研资产。截图如有会放在 `docs/screenshots/`；未生成截图时不声明已提供。依赖版本和来源在锁文件及 [许可评估](docs/licensing.md) 中记录。
+[后端职责](backend/README.md)、[前端说明](frontend/README.md)、[测试覆盖](tests/README.md)。贡献时同步受影响目录 README，添加有意义的合成测试；不要引入对目标包的 import、自动执行、密钥或科研资产。依赖版本和来源在锁文件及 [许可评估](docs/licensing.md) 中记录。
+
+实际浏览器验收截图见 [截图说明](docs/screenshots/README.md)：合成示例的 A→B 重连、语义 Diff 和源码证据。已验证真实拖线、断开、重连、撤销/重做、保存后刷新恢复及 JSON/Markdown 下载；这些操作不修改目标源码。
+
+![A→B 拟议重连](docs/screenshots/proposed-rewire.jpg)
