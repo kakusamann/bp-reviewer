@@ -4,13 +4,15 @@ Blueprint-based Project Reviewer：只读分析本地 Python 项目，以证据�
 
 适用于普通 Python 项目与科研代码库。React Flow 画布展示模块、顶层函数、静态导入/调用、中文端口说明和源码证据；可选 manifest 声明自动扫描无法确认的数据流。可展开模块、缩放、选择节点、检查类型/合同和源码哈希。
 
-独立工具；不运行目标代码、不训练模型、不自动修改目标源码。静态扫描无法完整还原运行数据流，详情见 [manifest 与证据边界](docs/manifest.md)。本次在既有私有仓库准备代码，等待用户批准首次远程推送。许可证评估见 [docs/licensing.md](docs/licensing.md)。
+独立工具；不运行目标代码、不训练模型、不自动修改目标源码。静态扫描无法完整还原运行数据流，详情见 [manifest 与证据边界](docs/manifest.md)。代码托管于用户指定的私有仓库；迁移实现位于 `refactor/split-bp-reviewer`，`main` 保留最小引导提交作为后续审阅基线。许可证评估见 [docs/licensing.md](docs/licensing.md)。
 
 ## Install and start
 
 Windows PowerShell + Conda，独立环境名 `bpreviewer`。Node `24.15.0`、npm `11.16.0`，不要求科研环境。
 
 ```powershell
+git clone --branch refactor/split-bp-reviewer https://github.com/kakusamann/bp-reviewer.git
+cd bp-reviewer
 conda env create -f environment.yml
 conda activate bpreviewer
 python -m bpreviewer.cli --allow-root ./examples/tiny_pipeline --allow-root ../AstroLCA
