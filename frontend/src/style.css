@@ -419,3 +419,16 @@ aside label select { margin-top: 6px; }
 :root[data-theme="dark"] .react-flow__edge-text { fill: #dce7ff !important; }
 :root[data-theme="dark"] .react-flow__edge-textbg { fill: #192439 !important; }
 :root[data-theme="dark"] .layer-switch button.active { color: #f5f7ff; background: #273449; }
+
+/* Real-time backend job progress, non-blocking and legible in both themes. */
+.open-progress { width: 100%; text-align: left; border-radius: 0; }
+.build-overlay { position: fixed; z-index: 2000; inset: 0; display: flex; align-items: center;
+  justify-content: center; padding: 20px; background: rgba(7, 12, 24, .65); }
+.build-modal { width: min(520px, 100%); max-height: 82vh; overflow: auto; padding: 26px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border-strong);
+  border-radius: 14px; box-shadow: 0 24px 65px #0008; }
+.build-modal h3 { margin: 0 0 14px; font-size: 17px; }
+.build-stage { font-size: 14px; font-weight: 650; line-height: 1.7; }
+.build-count { color: var(--muted-strong); font-size: 12px; }
+.build-caption { font-size: 11px; color: var(--muted); line-height: 1.65; }
+.build-modal button { margin-top: 10px; }
