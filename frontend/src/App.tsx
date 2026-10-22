@@ -237,10 +237,11 @@ function Workbench() {
     }
     return treeEntries.filter((entry) => allowed.has(entry.path));
   }, [treeEntries, treeQuery, expandedDirs]);
+  const visibleNodeIds = new Set(visible.map((node) => node.id));
   const diagramLinks = graph.edges.filter(
     (edge) =>
-      visible.some((node) => node.id === edge.source) &&
-      visible.some((node) => node.id === edge.target) &&
+      visibleNodeIds.has(edge.source) &&
+      visibleNodeIds.has(edge.target) &&
       (viewMode !== "logical" || showDependencies || ["data", "control"].includes(edge.kind)),
   );
   const renderedNodes: Node[] = visible.map((node, i) => ({
@@ -274,6 +275,11 @@ function Workbench() {
     setCanvasNodes(renderedNodes);
   }, [graph, scope, query, selected, editable, pending]);
   const nodes = canvasNodes;
+  useEffect(() => {
+    if (viewMode !== "logical" || mode !== "As-is") return;
+    const handle = setTimeout(() => void flow.fitView({ padding: 0.12, duration: 250 }), 80);
+    return () => clearTimeout(handle);
+  }, [scope, viewMode, showDependencies, semanticGraph, mode, flow]);
   const moveNodes = (changes: NodeChange[]) =>
     setCanvasNodes((previous) => applyNodeChanges(changes, previous));
   const ids = new Set(visible.map((n) => n.id));
