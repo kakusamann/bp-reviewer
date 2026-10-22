@@ -254,21 +254,35 @@ function Workbench() {
     data: { item: node, editable, choose: portClick },
   }));
   if (viewMode === "logical" && mode === "As-is" && visible.length <= 200) {
-    const layoutGraph = new dagre.graphlib.Graph({ multigraph: false });
-    layoutGraph.setGraph({ rankdir: "LR", ranksep: 140, nodesep: 90, marginx: 50, marginy: 45 });
-    layoutGraph.setDefaultEdgeLabel(() => ({}));
-    visible.forEach((node) => layoutGraph.setNode(node.id, {
-      width: 290,
-      height: Math.max(115, 80 + node.ports.length * 42),
-    }));
-    diagramLinks.forEach((edge) => {
-      if (edge.source !== edge.target) layoutGraph.setEdge(edge.source, edge.target);
-    });
-    dagre.layout(layoutGraph);
-    renderedNodes.forEach((node) => {
-      const entry = layoutGraph.node(node.id);
-      if (entry) node.position = { x: entry.x - entry.width / 2, y: entry.y - entry.height / 2 };
-    });
+    if (scope === "modules" || diagramLinks.length === 0) {
+      // Root overviews should remain legible even when no data-flow edge exists.
+      const columns = 3;
+      let top = 40;
+      for (let row = 0; row < visible.length; row += columns) {
+        const entries = visible.slice(row, row + columns);
+        const rowHeight = Math.max(...entries.map((entry) => Math.max(115, 80 + entry.ports.length * 42)));
+        entries.forEach((_, offset) => {
+          renderedNodes[row + offset].position = { x: 45 + offset * 380, y: top };
+        });
+        top += rowHeight + 75;
+      }
+    } else {
+      const layoutGraph = new dagre.graphlib.Graph({ multigraph: false });
+      layoutGraph.setGraph({ rankdir: "LR", ranksep: 140, nodesep: 90, marginx: 50, marginy: 45 });
+      layoutGraph.setDefaultEdgeLabel(() => ({}));
+      visible.forEach((node) => layoutGraph.setNode(node.id, {
+        width: 290,
+        height: Math.max(115, 80 + node.ports.length * 42),
+      }));
+      diagramLinks.forEach((edge) => {
+        if (edge.source !== edge.target) layoutGraph.setEdge(edge.source, edge.target);
+      });
+      dagre.layout(layoutGraph);
+      renderedNodes.forEach((node) => {
+        const entry = layoutGraph.node(node.id);
+        if (entry) node.position = { x: entry.x - entry.width / 2, y: entry.y - entry.height / 2 };
+      });
+    }
   }
   const [canvasNodes, setCanvasNodes] = useState<Node[]>([]);
   useEffect(() => {
