@@ -115,9 +115,15 @@ def test_mimo_tool_call_is_bounded_and_investigates_real_files(tmp_path: Path, m
             message = SimpleNamespace(
                 tool_calls=[call],
                 model_dump=lambda **_kwargs: {
-                    "role": "assistant", "content": None,
-                    "tool_calls": [{"id": call.id, "type": "function",
-                                    "function": {"name": call.function.name, "arguments": call.function.arguments}}],
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {"name": call.function.name, "arguments": call.function.arguments},
+                        }
+                    ],
                 },
             )
         else:
