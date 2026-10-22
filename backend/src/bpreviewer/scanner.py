@@ -44,6 +44,100 @@ def safe_file(root: Path, relative: str) -> Path:
     return path
 
 
+TEXT_SUFFIXES = {
+    ".py", ".md", ".txt", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".ini", ".cfg",
+    ".csv", ".tsv", ".xml", ".html", ".css", ".js", ".jsx", ".ts", ".tsx", ".sql",
+    ".sh", ".ps1", ".ipynb", ".r", ".jl",
+}
+SENSITIVE_NAMES = {
+    ".env", ".env.local", ".env.production", ".env.development",
+    "credentials.json", "secrets.json", "secrets.yaml", "secrets.yml",
+    "id_rsa", "id_ed25519", "known_hosts",
+}
+SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".der"}
+
+
+def is_sensitive_path(relative: str) -> bool:
+    name = Path(relative).name.lower()
+    return (
+        name in SENSITIVE_NAMES
+        or (name.startswith(".env") and name != ".env.example")
+        or Path(name).suffix.lower() in SENSITIVE_SUFFIXES
+    )
+
+
+def is_previewable(relative: str, size: int | None = None) -> bool:
+    if is_sensitive_path(relative):
+        return False
+    if size is not None and size > 1_000_000:
+        return False
+    return Path(relative).suffix.lower() in TEXT_SUFFIXES or Path(relative).name.lower() == ".env.example"
+
+
+def directory_tree(root: Path, max_entries: int = 10000, max_depth: int = 16) -> dict:
+    """Return a bounded, read-only directory index; never read file contents."""
+    root = root.resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("Project must be a directory")
+    entries = []
+    truncated = False
+    for base, dirs, names in os.walk(
+        root, followlinks=False, onerror=lambda error: None
+    ):
+        directory = Path(base)
+        depth = len(directory.relative_to(root).parts)
+        dirs[:] = sorted(
+            d for d in dirs
+            if d not in EXCLUDED
+            and not (directory / d).is_symlink()
+            and not (hasattr(directory / d, "is_junction") and (directory / d).is_junction())
+            and (directory / d).resolve().is_relative_to(root)
+        )
+        if depth >= max_depth:
+            if dirs:
+                truncated = True
+            dirs[:] = []
+        for name in dirs:
+            if len(entries) >= max_entries:
+                truncated = True
+                break
+            rel = (directory / name).relative_to(root).as_posix()
+            entries.append({
+                "path": rel, "name": name, "parent": directory.relative_to(root).as_posix() if depth else "",
+                "kind": "directory", "depth": depth, "size": None, "extension": "",
+                "previewable": False, "sensitive": False,
+            })
+        if truncated and len(entries) >= max_entries:
+            break
+        for name in sorted(names, key=str.casefold):
+            if len(entries) >= max_entries:
+                truncated = True
+                break
+            rel_path = directory / name
+            if rel_path.is_symlink() or (hasattr(rel_path, "is_junction") and rel_path.is_junction()):
+                continue
+            try:
+                if not rel_path.is_file() or not rel_path.resolve().is_relative_to(root):
+                    continue
+                size = rel_path.stat().st_size
+            except OSError:
+                continue
+            rel = rel_path.relative_to(root).as_posix()
+            entries.append({
+                "path": rel, "name": name, "parent": directory.relative_to(root).as_posix() if depth else "",
+                "kind": "file", "depth": depth, "size": size, "extension": rel_path.suffix.lower(),
+                "previewable": is_previewable(rel, size), "sensitive": is_sensitive_path(rel),
+            })
+        if truncated:
+            break
+    entries.sort(key=lambda item: (
+        item["parent"].casefold(),
+        0 if item["kind"] == "directory" else 1,
+        item["name"].casefold(),
+    ))
+    return {"entries": entries, "entry_count": len(entries), "truncated": truncated}
+
+
 def module_name(relative: str) -> str:
     parts = list(Path(relative).with_suffix("").parts)
     if "src" in parts:

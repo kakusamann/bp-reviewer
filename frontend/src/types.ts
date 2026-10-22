@@ -46,3 +46,16 @@ export type Snapshot = {
   warnings: string[];
   require_dag: boolean;
 };
+
+
+export type DirectoryEntry = {
+  path: string;
+  name: string;
+  parent: string;
+  kind: "directory" | "file";
+  depth: number;
+  size: number | null;
+  extension: string;
+  previewable: boolean;
+  sensitive: boolean;
+};

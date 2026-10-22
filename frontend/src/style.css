@@ -269,3 +269,33 @@ aside label select { margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+
+/* Actual project directory tree */
+.left-workspace { padding: 0; display: flex; flex-direction: column; gap: 0; }
+.tree-panel { display: flex; flex-direction: column; min-height: 260px; max-height: 48%; padding: 15px 10px 10px; border-bottom: 1px solid var(--border); }
+.tree-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; }
+.tree-heading h3 { margin-bottom: 10px; }
+.tree-count { min-width: 24px; padding: 2px 7px; margin-bottom: 10px; border-radius: 999px; background: #f0f1f8; color: var(--muted); font: 10px/1.5 "SFMono-Regular", Consolas, monospace; text-align: center; }
+.tree-search { width: 100%; margin-bottom: 7px; }
+.tree-scroll { overflow: auto; min-height: 150px; padding: 2px 0; scrollbar-width: thin; scrollbar-color: #c8cede transparent; }
+.tree-row { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 28px; padding-top: 4px; padding-bottom: 4px; padding-right: 7px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: left; color: #4a5268; font-size: 11px; font-weight: 450; }
+.tree-row:hover { background: #f1f2fb; border-color: #e8e9f6; }
+.tree-row.is-selected { color: #3f3ca7; background: #eeeeff; border-color: #dcdcff; }
+.tree-chevron { display: inline-flex; justify-content: center; align-items: center; width: 11px; color: #8b91a6; font-size: 14px; flex: 0 0 11px; }
+.tree-folder-glyph { color: #a18a58; font-size: 11px; flex: 0 0 11px; }
+.tree-file { gap: 7px; }
+.tree-ext { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 17px; padding: 0 3px; border-radius: 4px; background: #f0f2f8; color: #777f94; font: 8px/1 "SFMono-Regular", Consolas, monospace; flex: 0 0 auto; }
+.tree-file.is-selected .tree-ext { background: #deddff; color: #514ec1; }
+.tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.tree-lock { color: #b3a9a1; font-size: 10px; }
+.tree-empty { padding: 8px; font-size: 10px; color: var(--muted); }
+.blueprint-controls { min-height: 0; overflow: auto; padding: 15px 13px; }
+.blueprint-controls > input, .blueprint-controls > select { width: 100%; margin-bottom: 8px; }
+.selected-source { margin: 12px 0 16px; }
+.source-heading { display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px; font-size: 10px; font-weight: 700; color: var(--muted-strong); text-transform: uppercase; letter-spacing: .06em; }
+.source-heading small { font-size: 9px; font-weight: 450; text-transform: none; letter-spacing: 0; overflow-wrap: anywhere; color: var(--muted); }
+.source-preview { max-height: 260px; }
+@media (max-width: 1180px) {
+  .tree-panel { max-height: 44%; }
+}
