@@ -15,6 +15,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from openai import OpenAI
+from pydantic import ValidationError
 
 from .models import Edge, Evidence, Graph, Node, Port, Snapshot
 from .scanner import directory_tree, safe_file
@@ -354,6 +355,7 @@ def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
     valid_paths = {item["path"] for item in state["summaries"]}
     seen_paths: set[str] = set()
     clean_modules = []
+    used_module_keys: set[str] = set()
     for index, module in enumerate(modules):
         if not isinstance(module, dict):
             continue
@@ -367,8 +369,10 @@ def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
                 seen_paths.add(path)
         if not member_paths:
             continue
-        key = str(module.get("id") or f"module_{index + 1}")[:80]
-        name = str(module.get("name") or key)[:100]
+        raw_key = str(module.get("id") or f"module_{index + 1}")[:80]
+        # Model-generated module keys may repeat; internal keys must remain unique.
+        key = _unique_id(raw_key, used_module_keys)
+        name = str(module.get("name") or raw_key)[:100]
         try:
             confidence = float(module.get("confidence", 0.5))
         except (TypeError, ValueError):
@@ -390,7 +394,7 @@ def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
     for summary in state["summaries"]:
         if summary["path"] not in seen_paths:
             clean_modules.append({
-                "key": "unassigned_" + _slug(summary["path"]),
+                "key": _unique_id("unassigned_" + _slug(summary["path"]), used_module_keys),
                 "name": "待归类：" + Path(summary["path"]).stem,
                 "description": summary["summary"],
                 "member_paths": [summary["path"]],
@@ -401,6 +405,7 @@ def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
             seen_paths.add(summary["path"])
     valid_keys = {module["key"] for module in clean_modules}
     clean_edges = []
+    edge_by_signature: dict[tuple[str, str, str], dict[str, Any]] = {}
     for edge in edges[:40]:
         if not isinstance(edge, dict):
             continue
@@ -412,16 +417,29 @@ def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
             continue
         if not isinstance(evidence_paths, list):
             evidence_paths = []
-        evidence_paths = [path for path in evidence_paths if path in valid_paths][:3]
+        evidence_paths = [path for path in evidence_paths if isinstance(path, str) and path in valid_paths][:3]
         if not evidence_paths:
             continue
-        clean_edges.append({
+        signature = (source, target, kind)
+        reason = str(edge.get("reason", ""))[:180]
+        existing = edge_by_signature.get(signature)
+        if existing is not None:
+            # Merge duplicate semantic relationships but retain independent source evidence.
+            existing["evidence_paths"] = list(dict.fromkeys([
+                *existing["evidence_paths"], *evidence_paths
+            ]))[:8]
+            if reason and reason not in existing["reason"]:
+                existing["reason"] = (existing["reason"] + "；" + reason).strip("；")[:180]
+            continue
+        candidate = {
             "source_module": source,
             "target_module": target,
             "kind": kind,
-            "evidence_paths": evidence_paths,
-            "reason": str(edge.get("reason", ""))[:180],
-        })
+            "evidence_paths": list(dict.fromkeys(evidence_paths)),
+            "reason": reason,
+        }
+        edge_by_signature[signature] = candidate
+        clean_edges.append(candidate)
     return {"proposal": {"modules": clean_modules, "edges": clean_edges}}
 
 
@@ -544,10 +562,41 @@ def _build_graph(root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]]
             description=module["description"],
         ))
 
-    new_edges = list(snapshot.graph.edges)
+    new_edges = [edge.model_copy(deep=True) for edge in snapshot.graph.edges]
+    edge_by_id = {edge.id: edge for edge in new_edges}
+    duplicate_edges = 0
+    hit_edge_limit = False
+
     def add_edge(edge: Edge) -> None:
-        if len(new_edges) < 19990:
-            new_edges.append(edge)
+        nonlocal duplicate_edges, hit_edge_limit
+        existing = edge_by_id.get(edge.id)
+        if existing is not None:
+            def signature(value: Edge) -> tuple[str, ...]:
+                return (value.source, value.source_port, value.target,
+                        value.target_port, value.kind, value.status)
+            if signature(existing) != signature(edge):
+                raise AgentExecutionError(
+                    f"逻辑蓝图关系 ID 冲突：{edge.id}；"
+                    f"已存在 {existing.source}:{existing.source_port} -> "
+                    f"{existing.target}:{existing.target_port} ({existing.kind})，"
+                    f"新关系 {edge.source}:{edge.source_port} -> "
+                    f"{edge.target}:{edge.target_port} ({edge.kind})。"
+                )
+            seen_evidence = {proof.model_dump_json() for proof in existing.evidence}
+            for proof in edge.evidence:
+                encoded = proof.model_dump_json()
+                if encoded not in seen_evidence:
+                    existing.evidence.append(proof)
+                    seen_evidence.add(encoded)
+            duplicate_edges += 1
+            return
+        if len(new_edges) >= 19990:
+            if not hit_edge_limit:
+                warnings.append("逻辑蓝图关系数量达到安全上限，部分候选关系未展示。")
+                hit_edge_limit = True
+            return
+        new_edges.append(edge)
+        edge_by_id[edge.id] = edge
 
     for module in modules:
         module_id = module_ids[module["key"]]
@@ -604,7 +653,7 @@ def _build_graph(root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]]
             if source_node and source_node.evidence:
                 evidence.append(source_node.evidence[0].model_copy(update={
                     "status": "UNVERIFIED",
-                    "note": "MiMo 提出的模块关系候选；需人工核验，不能证明实际数据传输",
+                    "note": "MiMo 提出的模块关系候选；需人工核验：" + item.get("reason", "")[:180],
                 }))
         if not evidence:
             continue
@@ -730,7 +779,17 @@ def _build_graph(root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]]
         warnings.append("项目目录索引达到深度或条目上限；左侧目录树会提示该限制。")
     if len(new_nodes) > 6000:
         raise AgentExecutionError("逻辑蓝图节点数量超过安全上限，请先缩小项目扫描范围")
-    graph = Graph(nodes=new_nodes, edges=new_edges)
+    seen_nodes: set[str] = set()
+    for node in new_nodes:
+        if node.id in seen_nodes:
+            raise AgentExecutionError(f"逻辑蓝图节点 ID 冲突：{node.id}")
+        seen_nodes.add(node.id)
+    if duplicate_edges:
+        warnings.append(f"已合并 {duplicate_edges} 条重复逻辑关系，并保留各自的源码证据。")
+    try:
+        graph = Graph(nodes=new_nodes, edges=new_edges)
+    except ValidationError as error:
+        raise AgentExecutionError(f"逻辑蓝图结构校验失败：{error}") from error
     metadata = {
         "model": os.environ.get("MIMO_MODEL", "mimo-v2.5-pro"),
         "analyzed_files": len(summaries),
