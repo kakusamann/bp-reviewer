@@ -33,10 +33,17 @@ type CardData = {
   item: ProjectNode;
   editable: boolean;
   choose: (id: string, p: Port) => void;
+  enter: (id: string) => void;
 };
 function Card({ data }: NodeProps<Node<CardData>>) {
   return (
-    <article className="card" data-kind={data.item.kind}>
+    <article className="card" data-kind={data.item.kind}
+      onDoubleClick={(event) => {
+        if (data.item.kind === "logical_module") {
+          event.stopPropagation();
+          data.enter(data.item.id);
+        }
+      }}>
       <small>
         {data.item.kind} · {data.editable ? "UNVERIFIED · 拟议" : data.item.evidence[0]?.status || "UNVERIFIED"}
       </small>
@@ -48,15 +55,15 @@ function Card({ data }: NodeProps<Node<CardData>>) {
             type={p.io === "input" ? "target" : "source"}
             position={p.io === "input" ? Position.Left : Position.Right}
             isConnectable={data.editable}
-            title={p.description || "端口：类型未知时须人工确认"}
+            title={p.description || "结构连接端口；仅静态证据支持的读写关系显示具体数据类型"}
           />
           <button
             className="nodrag"
             onClick={() => data.choose(data.item.id, p)}
-            title={`${p.description || "输入/输出端口"}\n类型: ${p.data_type || "未知/待确认"}\n合同: ${p.schema_ref || "未声明"}\n基数: ${p.multiplicity || "many"}`}
+            title={p.description || "输入输出端口；数据对象以源码静态证据为准"}
           >
             {p.label || p.id}
-            <em>{p.data_type || "未知 / 待确认"}</em>
+            {p.data_type && <em>{p.data_type}</em>}
           </button>
         </div>
       ))}
@@ -114,6 +121,12 @@ function Workbench() {
   });
   const [scope, setScope] = useState("modules");
   const [showDependencies, setShowDependencies] = useState(false);
+  const [detailLayer, setDetailLayer] = useState<"logic" | "evidence" | "mixed">("logic");
+  const [layoutOverrides, setLayoutOverrides] = useState<Record<string, { x: number; y: number }>>({});
+  const [buildProgress, setBuildProgress] = useState<{
+    status: string; stage: string; detail: string; completed_steps: number; total_steps: number; error?: string;
+  }>();
+  const [showBuildProgress, setShowBuildProgress] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState("");
   const [edgeId, setEdgeId] = useState("");
@@ -195,30 +208,31 @@ function Workbench() {
       });
   };
   const visible = useMemo(() => {
-    const primary = graph.nodes.filter(
-      (n) =>
-        (scope === "all" ||
-          (scope === "modules"
-            ? !n.parent
-            : n.id === scope || n.parent === scope)) &&
-        (!query || n.label.toLowerCase().includes(query.toLowerCase())),
-    );
+    const isLogical = viewMode === "logical" && mode === "As-is";
+    const primary = graph.nodes.filter((node) => {
+      const belongs = scope === "all" ||
+        (scope === "modules" ? !node.parent : node.parent === scope);
+      if (!belongs || (query && !node.label.toLowerCase().includes(query.toLowerCase()))) return false;
+      if (!isLogical || detailLayer === "mixed") return true;
+      if (detailLayer === "logic") {
+        return node.kind === "logical_module" && node.label !== "工程与辅助资源";
+      }
+      return node.kind !== "logical_module";
+    });
     const visibleIds = new Set(primary.map((node) => node.id));
-    if (scope !== "modules" && scope !== "all") {
-      const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+    if (detailLayer === "mixed" && scope !== "modules" && scope !== "all") {
+      const byId = new Map(graph.nodes.map((node) => [node.id, node]));
       for (const edge of graph.edges) {
         const sourceInside = visibleIds.has(edge.source);
         const targetInside = visibleIds.has(edge.target);
         if (sourceInside === targetInside) continue;
-        const externalId = sourceInside ? edge.target : edge.source;
-        const external = nodeById.get(externalId);
-        if (external && ["logical_module", "data_artifact"].includes(external.kind)) {
-          visibleIds.add(externalId);
-        }
+        const id = sourceInside ? edge.target : edge.source;
+        const external = byId.get(id);
+        if (external && ["logical_module", "data_artifact"].includes(external.kind)) visibleIds.add(id);
       }
     }
     return graph.nodes.filter((node) => visibleIds.has(node.id));
-  }, [graph, scope, query]);
+  }, [graph, scope, query, viewMode, mode, detailLayer]);
   const visibleTreeEntries = useMemo(() => {
     if (!treeQuery.trim()) {
       return treeEntries.filter((entry) => !entry.parent || expandedDirs.includes(entry.parent));
@@ -256,7 +270,14 @@ function Workbench() {
       ? node.position
       : { x: (i % 3) * 360, y: Math.floor(i / 3) * 290 },
     selected: node.id === selected,
-    data: { item: node, editable, choose: portClick },
+    data: { item: node, editable, choose: portClick,
+      enter: (id: string) => {
+        setScope(id);
+        setQuery("");
+        setSelected("");
+        setEdgeId("");
+      },
+    },
   }));
   if (viewMode === "logical" && mode === "As-is" && visible.length <= 200) {
     if (scope === "modules" || diagramLinks.length === 0) {
@@ -289,10 +310,23 @@ function Workbench() {
       });
     }
   }
+  // Visual layout is user-adjustable even when immutable graph facts are read-only.
+  renderedNodes.forEach((node) => {
+    if (layoutOverrides[node.id] && mode === "As-is") node.position = layoutOverrides[node.id];
+  });
   const [canvasNodes, setCanvasNodes] = useState<Node[]>([]);
   useEffect(() => {
     setCanvasNodes(renderedNodes);
-  }, [graph, scope, query, selected, editable, pending]);
+  }, [graph, scope, query, selected, editable, pending, detailLayer, layoutOverrides]);
+  useEffect(() => {
+    if (!snapshot) return;
+    try {
+      const stored = localStorage.getItem(`bpreviewer.layout.${snapshot.id}`);
+      setLayoutOverrides(stored ? JSON.parse(stored) : {});
+    } catch {
+      setLayoutOverrides({});
+    }
+  }, [snapshot?.id]);
   const nodes = canvasNodes;
   useEffect(() => {
     if (viewMode !== "logical" || mode !== "As-is") return;
@@ -787,6 +821,17 @@ function Workbench() {
               <section className="blueprint-controls">
                 <h3>蓝图视图</h3>
                 {viewMode === "logical" && mode === "As-is" && (
+                  <div className="layer-switch" role="group" aria-label="逻辑蓝图内容层">
+                    {(["logic", "evidence", "mixed"] as const).map((layer) => (
+                      <button key={layer} type="button"
+                        className={detailLayer === layer ? "active" : ""}
+                        onClick={() => setDetailLayer(layer)}>
+                        {{ logic: "逻辑层", evidence: "证据层", mixed: "混合层" }[layer]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {viewMode === "logical" && mode === "As-is" && (
                   <div className="blueprint-navigation">
                     <div className="blueprint-breadcrumb">
                       <button type="button" onClick={() => setScope("modules")}>功能域总览</button>
@@ -811,7 +856,7 @@ function Workbench() {
                         onChange={(event) => setShowDependencies(event.target.checked)} />
                       显示静态导入与归属连线
                     </label>
-                    <p>双击节点查看下一级；默认仅展示数据流与控制流。</p>
+                    <p>单击查证据，双击逻辑模块进入内部；无下层内容时可在当前层点击 AI 细化。</p>
                   </div>
                 )}
                 <input
@@ -849,8 +894,20 @@ function Workbench() {
                   })}
               </select>
               <p>
-                节点 {graph.nodes.length} · 关系 {graph.edges.length}
+                当前可见 {visible.length} / 总计 {graph.nodes.length} 节点 · {graph.edges.length} 关系
               </p>
+              {viewMode === "logical" && mode === "As-is" && scope !== "modules" && scope !== "all" && visible.length === 0 && (
+                <div className="empty-layer">
+                  <p>{detailLayer === "logic" ? "此模块尚无更细的语义子模块，可切换证据层查看源码。" : "当前层没有该类证据节点。"}</p>
+                  <button onClick={() => void buildBlueprint()} disabled={busy}>AI 细化当前模块</button>
+                </div>
+              )}
+              {mode === "As-is" && (
+                <button type="button" onClick={() => {
+                  setLayoutOverrides({});
+                  if (snapshot) localStorage.removeItem(`bpreviewer.layout.${snapshot.id}`);
+                }}>恢复自动布局</button>
+              )}
               {viewMode === "logical" && analysisMeta && (
                 <p className="analysis-meta">
                   MiMo · {analysisMeta.model}
@@ -944,7 +1001,7 @@ function Workbench() {
                   nodeTypes={nodeTypes}
                   fitView
                   minZoom={0.05}
-                  nodesDraggable={editable}
+                  nodesDraggable={mode === "As-is" || editable}
                   nodesConnectable={editable}
                   edgesReconnectable={editable}
                   deleteKeyCode={null}
@@ -953,7 +1010,7 @@ function Workbench() {
                     setEdgeId("");
                   }}
                   onNodeDoubleClick={(_, node) => {
-                    if (graph.nodes.some((child) => child.parent === node.id)) {
+                    if (node.data.item.kind === "logical_module") {
                       setScope(node.id);
                       setQuery("");
                       setSelected("");
@@ -966,13 +1023,18 @@ function Workbench() {
                   }}
                   onNodesChange={moveNodes}
                   onNodeDragStop={(_, n) => {
-                    if (editable)
+                    if (editable) {
                       edit({
                         ...history.present,
                         nodes: history.present.nodes.map((v) =>
                           v.id === n.id ? { ...v, position: n.position } : v,
                         ),
                       });
+                    } else if (mode === "As-is" && snapshot) {
+                      const updated = { ...layoutOverrides, [n.id]: n.position };
+                      setLayoutOverrides(updated);
+                      localStorage.setItem(`bpreviewer.layout.${snapshot.id}`, JSON.stringify(updated));
+                    }
                   }}
                   onConnect={connect}
                   onReconnect={(old, c) => connect(c, old.id)}
