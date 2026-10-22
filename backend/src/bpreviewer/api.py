@@ -2,6 +2,8 @@
 
 import json
 import secrets
+import threading
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -35,6 +37,11 @@ class ScopedBlueprintRequest(Model):
     scope_node_id: str = Field(min_length=1, max_length=512)
 
 
+class BlueprintJobRequest(Model):
+    scope_node_id: str | None = Field(default=None, max_length=512)
+    force_refresh: bool = True
+
+
 def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
     store = Store(state, allowed_roots)
 
@@ -52,6 +59,9 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
 
     app = FastAPI(title="BP-Reviewer", version="0.1.0", dependencies=[Depends(authorize)])
     app.state.store = store
+    # In-memory task states only; API token and snapshot scope guard every request.
+    jobs: dict[str, dict] = {}
+    jobs_lock = threading.Lock()
 
     # No CORS wildcard; Vite uses a same-origin proxy. Reject DNS rebinding hosts.
     @app.middleware("http")
@@ -128,6 +138,68 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
             raise HTTPException(503, str(error)) from error
         except AgentExecutionError as error:
             raise HTTPException(422, str(error)) from error
+
+    @app.post("/api/snapshots/{key}/semantic-blueprint/jobs")
+    def create_blueprint_job(key: str, request: BlueprintJobRequest):
+        snapshot = store.snapshot(key)
+        root = project_root(key)
+        with jobs_lock:
+            now = time.monotonic()
+            for job_id, job in list(jobs.items()):
+                if job["status"] in {"completed", "failed"} and now - job["updated_at"] > 3600:
+                    jobs.pop(job_id, None)
+            if sum(job["status"] in {"queued", "running"} for job in jobs.values()) >= 2:
+                raise HTTPException(429, "已有两个蓝图任务正在运行，请查看任务进度")
+            job_id = secrets.token_urlsafe(16)
+            jobs[job_id] = {
+                "snapshot_id": key, "status": "queued", "stage": "queued",
+                "detail": "任务已进入队列", "completed_steps": 0, "total_steps": 0,
+                "updated_at": now, "result": None, "error": "",
+            }
+
+        def progress(stage: str, detail: str, done: int, total: int):
+            with jobs_lock:
+                job = jobs[job_id]
+                job.update(status="running", stage=stage, detail=detail,
+                           completed_steps=done, total_steps=total, updated_at=time.monotonic())
+
+        def worker():
+            try:
+                progress("starting", "正在启动只读分析", 0, 0)
+                if request.scope_node_id:
+                    result = rebuild_semantic_blueprint_scope(
+                        root, snapshot, None, request.scope_node_id, store.state,
+                        force_refresh=request.force_refresh, progress_callback=progress,
+                    )
+                else:
+                    result = build_semantic_blueprint(
+                        root, snapshot, store.state, force_refresh=request.force_refresh,
+                        progress_callback=progress,
+                    )
+                with jobs_lock:
+                    jobs[job_id].update(status="completed", stage="complete",
+                                        detail="分析完成", result=result, updated_at=time.monotonic())
+            except Exception as error:
+                # Never expose arbitrary exception dumps that might contain secrets or source.
+                message = str(error)[:400] if isinstance(error, (AgentExecutionError, AgentConfigurationError, ValueError)) else "内部构建失败，请检查后端日志"
+                with jobs_lock:
+                    jobs[job_id].update(status="failed", stage="failed",
+                                        detail="分析失败", error=message, updated_at=time.monotonic())
+
+        threading.Thread(target=worker, name="bp-blueprint-" + job_id[:6], daemon=True).start()
+        return {"job_id": job_id, "status": "queued"}
+
+    @app.get("/api/snapshots/{key}/semantic-blueprint/jobs/{job_id}")
+    def blueprint_job(key: str, job_id: str):
+        store.snapshot(key)
+        with jobs_lock:
+            job = jobs.get(job_id)
+            if not job or job["snapshot_id"] != key:
+                raise HTTPException(404, "蓝图任务不存在或已过期")
+            return {"job_id": job_id, "status": job["status"], "stage": job["stage"],
+                    "detail": job["detail"], "completed_steps": job["completed_steps"],
+                    "total_steps": job["total_steps"], "error": job["error"],
+                    "result": job["result"] if job["status"] == "completed" else None}
 
     @app.get("/api/snapshots/{key}/tree")
     def tree(key: str):
