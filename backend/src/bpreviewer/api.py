@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
-from .agent import AgentConfigurationError, AgentExecutionError, build_semantic_blueprint
+from .agent import AgentConfigurationError, AgentExecutionError, build_semantic_blueprint, rebuild_semantic_blueprint_scope
 from .models import Graph, Manifest, Model
 from .review import change_request, validate
 from .scanner import directory_tree, digest, is_previewable, safe_file
@@ -24,6 +24,11 @@ class Project(Model):
 class Proposal(Model):
     graph: Graph
     revision: int = Field(default=0, ge=0)
+
+
+class ScopedBlueprintRequest(Model):
+    scope_node_id: str = Field(min_length=1, max_length=512)
+    graph: Graph
 
 
 def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
@@ -106,6 +111,19 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
             raise HTTPException(503, str(error)) from error
         except AgentExecutionError as error:
             raise HTTPException(502, str(error)) from error
+
+    @app.post("/api/snapshots/{key}/semantic-blueprint/rebuild")
+    def rebuild_semantic_scope(key: str, request: ScopedBlueprintRequest):
+        snapshot = store.snapshot(key)
+        root = project_root(key)
+        try:
+            return rebuild_semantic_blueprint_scope(
+                root, snapshot, request.graph, request.scope_node_id, store.state, force_refresh=True
+            )
+        except AgentConfigurationError as error:
+            raise HTTPException(503, str(error)) from error
+        except AgentExecutionError as error:
+            raise HTTPException(422, str(error)) from error
 
     @app.get("/api/snapshots/{key}/tree")
     def tree(key: str):
