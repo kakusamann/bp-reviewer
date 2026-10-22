@@ -313,7 +313,7 @@ def _label_domains(state: BlueprintState) -> dict[str, Any]:
 def _select_candidates(state: BlueprintState) -> dict[str, Any]:
     root = Path(state["root"]).resolve(strict=True)
     snapshot = Snapshot.model_validate(state["snapshot"])
-    file_nodes = [node for node in snapshot.graph.nodes if node.id.startswith("file:") and node.evidence]
+    file_nodes = [node for node in snapshot.graph.nodes if node.evidence and node.id == "file:" + node.evidence[0].path]
     if not file_nodes:
         raise AgentExecutionError("静态扫描中没有可供语义分析的 Python 文件节点")
 
@@ -643,7 +643,7 @@ def _build_graph(
     used_ids = {node.id for node in snapshot.graph.nodes}
     warnings: list[str] = []
     file_nodes = {
-        node.evidence[0].path: node for node in snapshot.graph.nodes if node.id.startswith("file:") and node.evidence
+        node.evidence[0].path: node for node in snapshot.graph.nodes if node.evidence and node.id == "file:" + node.evidence[0].path
     }
     summary_by_path = {item["path"]: item for item in summaries}
     modules = list(proposal["modules"])
@@ -680,7 +680,7 @@ def _build_graph(
 
     new_nodes: list[Node] = []
     for node in snapshot.graph.nodes:
-        if node.id.startswith("file:") and node.evidence:
+        if node.evidence and node.id == "file:" + node.evidence[0].path
             path = node.evidence[0].path
             new_nodes.append(
                 node.model_copy(
@@ -1187,7 +1187,7 @@ def _scope_paths_for_node(root: Path, snapshot: Snapshot, graph: Graph, scope_no
     static_python_paths = {
         node.evidence[0].path
         for node in snapshot.graph.nodes
-        if node.id.startswith("file:") and node.evidence and Path(node.evidence[0].path).suffix.lower() == ".py"
+        if node.evidence and node.id == "file:" + node.evidence[0].path and Path(node.evidence[0].path).suffix.lower() == ".py"
     }
     paths = {
         proof.path
