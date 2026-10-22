@@ -1,7 +1,7 @@
 """Scoped semantic blueprint rebuilds preserve all out-of-scope branches."""
 
 from bpreviewer.agent import AgentExecutionError, rebuild_semantic_blueprint_scope
-from bpreviewer.models import Edge, Evidence, Graph, Node, Port
+from bpreviewer.models import Edge, Graph, Node, Port
 from bpreviewer.scanner import scan
 
 
