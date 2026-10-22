@@ -1223,7 +1223,9 @@ def _scope_paths_for_node(root: Path, snapshot: Snapshot, graph: Graph, scope_no
     return sorted(paths)
 
 
-def _merge_scoped_graph(original: Graph, generated: Graph, scope_node_id: str, analyzed_files: int) -> Graph:
+def _merge_scoped_graph(
+    original: Graph, generated: Graph, scope_node_id: str, analyzed_files: int, scope_paths: list[str]
+) -> Graph:
     """Replace only descendants of a scope; keep ancestors and sibling branches intact."""
     original_nodes = {node.id: node for node in original.nodes}
     scope = original_nodes.get(scope_node_id)
@@ -1255,10 +1257,24 @@ def _merge_scoped_graph(original: Graph, generated: Graph, scope_node_id: str, a
         node.id for node in generated.nodes
         if node.kind == "logical_module" and node.parameters.get("structural_group") is True
     }
+    generated_ids = {
+        node.id for node in generated.nodes
+        if (node.kind == "logical_module" and node.id.startswith("agent:module:"))
+        or (
+            node.kind in {"code_file", "function"}
+            and any(proof.path in set(scope_paths) for proof in node.evidence)
+        )
+        or (
+            node.id.startswith("file:")
+            and node.id[5:] in set(scope_paths)
+        )
+    }
     for node in generated.nodes:
         if node.id == scope_node_id or node.id in structural_ids:
             continue
         if node.kind == "data_artifact" or node.label == "数据与文件资产":
+            continue
+        if node.id not in generated_ids:
             continue
         parent = node.parent
         if parent in structural_ids or (parent and parent not in {item.id for item in generated.nodes}):
@@ -1353,7 +1369,7 @@ def rebuild_semantic_blueprint_scope(
     generated_graph = Graph.model_validate(generated_result["graph"])
     merged = _merge_scoped_graph(
         existing_graph, generated_graph, scope_node_id,
-        int(generated_result.get("metadata", {}).get("analyzed_files", 0)),
+        int(generated_result.get("metadata", {}).get("analyzed_files", 0)), all_paths,
     )
     metadata = dict(generated_result.get("metadata", {}))
     metadata.update({
