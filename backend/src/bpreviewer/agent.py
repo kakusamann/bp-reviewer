@@ -1318,14 +1318,37 @@ def _merge_scoped_graph(
 def rebuild_semantic_blueprint_scope(
     root: Path,
     snapshot: Snapshot,
-    existing_graph: Graph,
+    existing_graph: Graph | None,
     scope_node_id: str,
     state_dir: Path,
     force_refresh: bool = True,
 ) -> dict[str, Any]:
     """Re-analyze one logical module and atomically replace only its descendants."""
     root = root.resolve(strict=True)
-    existing_graph = Graph.model_validate(existing_graph)
+    model = os.environ.get("MIMO_MODEL", "mimo-v2.5-pro").strip()
+    global_scope_digest = hashlib.sha256("".encode("utf-8")).hexdigest()[:16]
+    global_cache_key = hashlib.sha256(
+        f"{snapshot.id}|{model}|{PROMPT_VERSION}|{global_scope_digest}".encode("utf-8")
+    ).hexdigest()
+    global_cache_path = state_dir / "semantic-blueprints" / f"{global_cache_key}.json"
+    global_cache = {}
+    if existing_graph is None:
+        if global_cache_path.exists():
+            try:
+                global_cache = json.loads(global_cache_path.read_text(encoding="utf-8"))
+                existing_graph = Graph.model_validate(global_cache["graph"])
+            except (OSError, json.JSONDecodeError, KeyError, ValidationError):
+                existing_graph = None
+        if existing_graph is None:
+            global_cache = build_semantic_blueprint(root, snapshot, state_dir)
+            existing_graph = Graph.model_validate(global_cache["graph"])
+    else:
+        existing_graph = Graph.model_validate(existing_graph)
+        if global_cache_path.exists():
+            try:
+                global_cache = json.loads(global_cache_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                global_cache = {}
     all_paths = _scope_paths_for_node(root, snapshot, existing_graph, scope_node_id)
     python_paths = {
         path for path in all_paths
@@ -1380,4 +1403,16 @@ def rebuild_semantic_blueprint_scope(
         "cache_hit": False,
         "warnings": list(dict.fromkeys(metadata.get("warnings", []))),
     })
+    # Persist the merged graph so subsequent local rebuilds operate on the latest hierarchy.
+    global_cache["graph"] = merged.model_dump()
+    global_metadata = global_cache.setdefault("metadata", {})
+    global_metadata["last_local_rebuild"] = {
+        "scope_node_id": scope_node_id,
+        "scope_label": metadata["scope_label"],
+        "scope_files": len(python_paths),
+    }
+    global_cache_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = global_cache_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(global_cache, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(global_cache_path)
     return {"graph": merged.model_dump(), "metadata": metadata}
