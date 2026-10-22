@@ -79,16 +79,25 @@ def test_aggregate_merges_model_duplicate_edges_without_dropping_evidence(monkey
             ],
             "edges": [
                 {
-                    "source_module": "upstream", "target_module": "downstream", "kind": "data",
-                    "evidence_paths": ["first.py"], "reason": "produces",
+                    "source_module": "upstream",
+                    "target_module": "downstream",
+                    "kind": "data",
+                    "evidence_paths": ["first.py"],
+                    "reason": "produces",
                 },
                 {
-                    "source_module": "upstream", "target_module": "downstream", "kind": "data",
-                    "evidence_paths": ["second.py"], "reason": "consumes",
+                    "source_module": "upstream",
+                    "target_module": "downstream",
+                    "kind": "data",
+                    "evidence_paths": ["second.py"],
+                    "reason": "consumes",
                 },
                 {
-                    "source_module": "upstream", "target_module": "downstream", "kind": "control",
-                    "evidence_paths": ["first.py"], "reason": "invokes",
+                    "source_module": "upstream",
+                    "target_module": "downstream",
+                    "kind": "control",
+                    "evidence_paths": ["first.py"],
+                    "reason": "invokes",
                 },
             ],
         }
@@ -120,13 +129,8 @@ def test_aggregate_normalizes_duplicate_model_module_keys(monkeypatch):
 
 def test_build_graph_deduplicates_edges_preserving_source_evidence(tmp_path):
     snapshot = example_project(tmp_path)
-    before = {
-        path.name: path.read_bytes()
-        for path in tmp_path.iterdir() if path.is_file()
-    }
-    graph, _, meta = _build_graph(
-        tmp_path, snapshot, [summary("first.py"), summary("second.py")], proposal(), []
-    )
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()}
+    graph, _, meta = _build_graph(tmp_path, snapshot, [summary("first.py"), summary("second.py")], proposal(), [])
     assert len({node.id for node in graph.nodes}) == len(graph.nodes)
     assert len({edge.id for edge in graph.edges}) == len(graph.edges)
     proposed = [edge for edge in graph.edges if edge.id.startswith("agent:proposal:")]
@@ -135,17 +139,12 @@ def test_build_graph_deduplicates_edges_preserving_source_evidence(tmp_path):
     assert {proof.path for proof in proposed[0].evidence} == {"first.py", "second.py"}
     assert any("重复逻辑关系" in warning for warning in meta["warnings"])
     assert snapshot.graph.nodes[0].kind == "module"
-    assert before == {
-        path.name: path.read_bytes()
-        for path in tmp_path.iterdir() if path.is_file()
-    }
+    assert before == {path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()}
 
 
 def test_build_graph_reports_true_id_collision_with_both_endpoints(tmp_path):
     snapshot = example_project(tmp_path)
-    graph, _, _ = _build_graph(
-        tmp_path, snapshot, [summary("first.py"), summary("second.py")], proposal(), []
-    )
+    graph, _, _ = _build_graph(tmp_path, snapshot, [summary("first.py"), summary("second.py")], proposal(), [])
     generated = next(edge for edge in graph.edges if edge.id.startswith("agent:proposal:"))
     snapshot.graph.edges.append(
         Edge(
@@ -159,8 +158,6 @@ def test_build_graph_reports_true_id_collision_with_both_endpoints(tmp_path):
         )
     )
     with pytest.raises(AgentExecutionError, match="关系 ID 冲突") as error:
-        _build_graph(
-            tmp_path, snapshot, [summary("first.py"), summary("second.py")], proposal(), []
-        )
+        _build_graph(tmp_path, snapshot, [summary("first.py"), summary("second.py")], proposal(), [])
     assert "file:first.py" in str(error.value)
     assert "agent:module:" in str(error.value)

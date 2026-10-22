@@ -45,14 +45,44 @@ def safe_file(root: Path, relative: str) -> Path:
 
 
 TEXT_SUFFIXES = {
-    ".py", ".md", ".txt", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".ini", ".cfg",
-    ".csv", ".tsv", ".xml", ".html", ".css", ".js", ".jsx", ".ts", ".tsx", ".sql",
-    ".sh", ".ps1", ".ipynb", ".r", ".jl",
+    ".py",
+    ".md",
+    ".txt",
+    ".json",
+    ".jsonl",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".csv",
+    ".tsv",
+    ".xml",
+    ".html",
+    ".css",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".sql",
+    ".sh",
+    ".ps1",
+    ".ipynb",
+    ".r",
+    ".jl",
 }
 SENSITIVE_NAMES = {
-    ".env", ".env.local", ".env.production", ".env.development",
-    "credentials.json", "secrets.json", "secrets.yaml", "secrets.yml",
-    "id_rsa", "id_ed25519", "known_hosts",
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.development",
+    "credentials.json",
+    "secrets.json",
+    "secrets.yaml",
+    "secrets.yml",
+    "id_rsa",
+    "id_ed25519",
+    "known_hosts",
 }
 SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".der"}
 
@@ -81,13 +111,12 @@ def directory_tree(root: Path, max_entries: int = 10000, max_depth: int = 16) ->
         raise ValueError("Project must be a directory")
     entries = []
     truncated = False
-    for base, dirs, names in os.walk(
-        root, followlinks=False, onerror=lambda error: None
-    ):
+    for base, dirs, names in os.walk(root, followlinks=False, onerror=lambda error: None):
         directory = Path(base)
         depth = len(directory.relative_to(root).parts)
         dirs[:] = sorted(
-            d for d in dirs
+            d
+            for d in dirs
             if d not in EXCLUDED
             and not (directory / d).is_symlink()
             and not (hasattr(directory / d, "is_junction") and (directory / d).is_junction())
@@ -103,12 +132,20 @@ def directory_tree(root: Path, max_entries: int = 10000, max_depth: int = 16) ->
                 truncated = True
                 break
             rel = (directory / name).relative_to(root).as_posix()
-            entries.append({
-                "path": rel, "name": name, "parent": directory.relative_to(root).as_posix() if depth else "",
-                "kind": "directory", "depth": depth, "size": None, "extension": "",
-                "modified_ns": (directory / name).stat().st_mtime_ns,
-                "previewable": False, "sensitive": False,
-            })
+            entries.append(
+                {
+                    "path": rel,
+                    "name": name,
+                    "parent": directory.relative_to(root).as_posix() if depth else "",
+                    "kind": "directory",
+                    "depth": depth,
+                    "size": None,
+                    "extension": "",
+                    "modified_ns": (directory / name).stat().st_mtime_ns,
+                    "previewable": False,
+                    "sensitive": False,
+                }
+            )
         if len(entries) >= max_entries:
             truncated = True
             break
@@ -126,20 +163,30 @@ def directory_tree(root: Path, max_entries: int = 10000, max_depth: int = 16) ->
             except OSError:
                 continue
             rel = rel_path.relative_to(root).as_posix()
-            entries.append({
-                "path": rel, "name": name, "parent": directory.relative_to(root).as_posix() if depth else "",
-                "kind": "file", "depth": depth, "size": size, "extension": rel_path.suffix.lower(),
-                "modified_ns": rel_path.stat().st_mtime_ns,
-                "previewable": is_previewable(rel, size), "sensitive": is_sensitive_path(rel),
-            })
+            entries.append(
+                {
+                    "path": rel,
+                    "name": name,
+                    "parent": directory.relative_to(root).as_posix() if depth else "",
+                    "kind": "file",
+                    "depth": depth,
+                    "size": size,
+                    "extension": rel_path.suffix.lower(),
+                    "modified_ns": rel_path.stat().st_mtime_ns,
+                    "previewable": is_previewable(rel, size),
+                    "sensitive": is_sensitive_path(rel),
+                }
+            )
         if len(entries) >= max_entries:
             truncated = True
             break
-    entries.sort(key=lambda item: (
-        item["parent"].casefold(),
-        0 if item["kind"] == "directory" else 1,
-        item["name"].casefold(),
-    ))
+    entries.sort(
+        key=lambda item: (
+            item["parent"].casefold(),
+            0 if item["kind"] == "directory" else 1,
+            item["name"].casefold(),
+        )
+    )
     return {"entries": entries, "entry_count": len(entries), "truncated": truncated}
 
 
