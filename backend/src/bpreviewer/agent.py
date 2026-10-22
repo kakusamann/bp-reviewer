@@ -695,7 +695,7 @@ def _build_graph(
 
     new_nodes: list[Node] = []
     for node in snapshot.graph.nodes:
-        if node.evidence and node.id == "file:" + node.evidence[0].path
+        if node.evidence and node.id == "file:" + node.evidence[0].path:
             path = node.evidence[0].path
             new_nodes.append(
                 node.model_copy(
