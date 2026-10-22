@@ -22,7 +22,7 @@ def _all_members(graph: Graph) -> dict[str, list[str]]:
     nodes = {node.id: node for node in graph.nodes}
     groups: dict[str, set[str]] = defaultdict(set)
     for node in graph.nodes:
-        if node.id != "file:" + node.evidence[0].path if node.evidence else True:
+        if not node.evidence or node.id != "file:" + node.evidence[0].path:
             continue
         ancestor = node.parent
         visited: set[str] = set()
