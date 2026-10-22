@@ -76,6 +76,11 @@ function Workbench() {
   const [token, setToken] = useState(
     sessionStorage.getItem("bpreviewer.token") || "",
   );
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("bpreviewer.theme") === "dark");
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+    localStorage.setItem("bpreviewer.theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
   const [path, setPath] = useState("");
   const [roots, setRoots] = useState<string[]>([]);
   const [treeEntries, setTreeEntries] = useState<DirectoryEntry[]>([]);
@@ -261,7 +266,8 @@ function Workbench() {
       reconnectable: editable,
       markerEnd: { type: MarkerType.ArrowClosed },
       style: {
-        stroke: e.kind === "data" ? "#408e90" : "#74849a",
+        stroke: e.kind === "data" ? (darkMode ? "#4ad4c0" : "#168f87") : e.kind === "control" ? (darkMode ? "#b4a1ff" : "#7b72cc") : "#74849a",
+        strokeWidth: 2,
         strokeDasharray: e.kind === "control" ? "6 4" : undefined,
       },
     }));
@@ -422,6 +428,15 @@ function Workbench() {
           <h1>BP-Reviewer</h1>
         </div>
         <span>只读扫描 · 独立草稿 · 人工评审</span>
+        <button
+          type="button"
+          className="theme-toggle"
+          aria-label="切换界面主题"
+          aria-pressed={darkMode}
+          onClick={() => setDarkMode((previous) => !previous)}
+        >
+          {darkMode ? "浅色模式" : "深色模式"}
+        </button>
       </header>
       <section className="connection">
         <input
@@ -771,6 +786,7 @@ function Workbench() {
                 </div>
               ) : (
                 <ReactFlow
+                  colorMode={darkMode ? "dark" : "light"}
                   nodes={nodes}
                   edges={edges}
                   nodeTypes={nodeTypes}

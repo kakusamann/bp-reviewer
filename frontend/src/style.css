@@ -303,3 +303,80 @@ aside label select { margin-top: 6px; }
 .agent-action { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 2px 5px rgb(89 86 214 / 16%); }
 .agent-action:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .analysis-meta { padding: 9px 10px; border: 1px solid #e4e4fb; border-radius: 8px; background: #f5f5ff; color: #5a5899 !important; font-size: 10px !important; }
+
+
+/* Optional Blueprint Studio graphite theme; existing light design remains intact. */
+.theme-toggle {
+  flex: 0 0 auto;
+  border-color: #555975;
+  background: #2b3048;
+  color: #e6e8ff;
+  font-size: 11px;
+  font-weight: 650;
+}
+.theme-toggle:hover { background: #424a74; border-color: #929dff; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c1018;
+  --surface: #151d2b;
+  --surface-subtle: #111723;
+  --surface-hover: #273449;
+  --ink: #e8eef9;
+  --muted: #9aa8be;
+  --muted-strong: #bbc9dd;
+  --border: #2a3549;
+  --border-strong: #3b4a64;
+  --accent: #889aff;
+  --accent-hover: #a6b1ff;
+  --accent-soft: #263357;
+  --teal: #4ad4c0;
+  --teal-soft: #173c3b;
+  --amber: #f6bf6f;
+  --amber-soft: #382c1e;
+  --danger: #ff8f95;
+  --danger-soft: #442530;
+  --shadow-sm: 0 8px 22px #02071466;
+  --shadow-card: 0 15px 33px #020714a6, inset 0 1px #ffffff0c;
+}
+:root[data-theme="dark"] .connection { box-shadow: none; }
+:root[data-theme="dark"] .connection button { color: #10192b; }
+:root[data-theme="dark"] .connection button:disabled { color: #10192b; }
+:root[data-theme="dark"] nav button { color: var(--muted-strong); }
+:root[data-theme="dark"] nav .active { color: #0e1727; }
+:root[data-theme="dark"] .notice { background: #101826; color: var(--muted); }
+:root[data-theme="dark"] [role="status"] { background: var(--accent-soft); color: #dce4ff; }
+:root[data-theme="dark"] .error { border-color: #874552; }
+:root[data-theme="dark"] .warning { color: #f3ca90; border-color: #6b512c; }
+:root[data-theme="dark"] .canvas {
+  background-color: #0d1420;
+  background-image: radial-gradient(#29344d 0.85px, transparent 0.85px), radial-gradient(ellipse at 40% 16%, #5969c010, transparent 62%);
+  background-size: 18px 18px, 100% 100%;
+}
+:root[data-theme="dark"] .card {
+  border-color: #485a75;
+  background: linear-gradient(165deg, #202c42, #172134);
+}
+:root[data-theme="dark"] .card > small { color: #aebbed; }
+:root[data-theme="dark"] .port button { background: #172236; color: #d9e4f4; }
+:root[data-theme="dark"] .port button:hover { background: #293954; }
+:root[data-theme="dark"] .port em { color: #95a8c5; }
+:root[data-theme="dark"] .react-flow__handle { border-color: #193340; box-shadow: 0 0 0 2px #4ad4c02a; }
+:root[data-theme="dark"] .react-flow__node.selected .card { border-color: var(--accent); box-shadow: 0 0 0 2px #8396ff58, 0 18px 40px #020714b8; }
+:root[data-theme="dark"] .react-flow__controls-button { background: #1b2739 !important; border-color: #3a4b66 !important; fill: #c8d5eb !important; }
+:root[data-theme="dark"] .react-flow__minimap { background: #162034; }
+:root[data-theme="dark"] .inspector { background: #111723; }
+:root[data-theme="dark"] .inspector code,
+:root[data-theme="dark"] .inspector pre,
+:root[data-theme="dark"] .inspector textarea,
+:root[data-theme="dark"] .diff pre { background: #0c1422; color: #bfd1ec; border-color: var(--border); }
+:root[data-theme="dark"] .diff { background: var(--bg); }
+:root[data-theme="dark"] .welcome { background: #151d2b; border-color: var(--border); }
+:root[data-theme="dark"] .tree-row:hover { background: #26314a; border-color: #3d4a68; }
+:root[data-theme="dark"] .tree-row.is-selected { background: #28365a; border-color: #46598d; color: #dce4ff; }
+:root[data-theme="dark"] .tree-file.is-selected .tree-ext { background: #465786; color: #e1e7ff; }
+:root[data-theme="dark"] .tree-chevron { color: #9faec8; }
+:root[data-theme="dark"] .tree-folder-glyph { color: #f6bf6f; }
+:root[data-theme="dark"] .tree-scroll { scrollbar-color: #45546c transparent; }
+:root[data-theme="dark"] .source-heading small { color: var(--muted); }
+:root[data-theme="dark"] .agent-action { color: #10192b; }
+:root[data-theme="dark"] .agent-action:hover { background: var(--accent-hover); }
