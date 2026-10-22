@@ -99,7 +99,7 @@ def test_ast_tools_reject_non_python_and_path_traversal(tmp_path: Path):
 
 def test_mimo_tool_call_is_bounded_and_investigates_real_files(tmp_path: Path, monkeypatch):
     (tmp_path / "example.py").write_text(
-        'def load():\\n    return read_csv("inventory.csv")\\n',
+        'def load():\n    return read_csv("inventory.csv")\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("MIMO_API_KEY", "fake-only-for-unit-test")
