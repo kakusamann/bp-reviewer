@@ -380,3 +380,24 @@ aside label select { margin-top: 6px; }
 :root[data-theme="dark"] .source-heading small { color: var(--muted); }
 :root[data-theme="dark"] .agent-action { color: #10192b; }
 :root[data-theme="dark"] .agent-action:hover { background: var(--accent-hover); }
+
+
+/* Hierarchical semantic-blueprint navigation */
+.blueprint-navigation {
+  padding: 8px 9px 10px;
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+}
+.blueprint-breadcrumb { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 10px; }
+.blueprint-breadcrumb button {
+  padding: 4px 6px; max-width: 100%; width: auto;
+  font-size: 10px; text-align: left; border: 0;
+  background: transparent; color: var(--accent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.blueprint-breadcrumb button:hover { background: var(--accent-soft); }
+.blueprint-toggle { display: flex !important; align-items: center; gap: 8px; margin: 6px 0 !important; line-height: 1.5; }
+.blueprint-toggle input { width: 14px; height: 14px; margin: 0; flex: 0 0 auto; }
+.blueprint-navigation p { margin-bottom: 0; }
