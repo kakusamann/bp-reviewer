@@ -57,8 +57,10 @@ it("opens a generic project with a read-only baseline then isolated proposed mod
       json: async () =>
         path === "/api/projects"
           ? { allowed_roots: ["demo"] }
-          : path.endsWith("/draft")
-            ? { graph, revision: 0 }
+          : path.endsWith("/tree")
+            ? { entries: [], truncated: false }
+            : path.endsWith("/draft")
+              ? { graph, revision: 0 }
             : {
                 id: "sample",
                 project_name: "demo",
