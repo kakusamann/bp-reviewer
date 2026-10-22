@@ -26,7 +26,7 @@ def test_scoped_rebuild_replaces_only_selected_subtree(tmp_path, monkeypatch):
     _write_project(tmp_path)
     snapshot = scan(tmp_path)
     static_files = {
-        node.evidence[0].path: node for node in snapshot.graph.nodes if node.id.startswith("file:") and node.evidence
+        node.evidence[0].path: node for node in snapshot.graph.nodes if node.evidence and node.id == "file:" + node.evidence[0].path
     }
     kg_paths = ["src/kg/ontology.py", "src/kg/instance.py"]
     other_path = "src/matching/retriever.py"
