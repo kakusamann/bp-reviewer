@@ -2,12 +2,13 @@
 
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from bpreviewer.evidence_tools import collect_evidence, execute_tool, inspect_file
 from bpreviewer.models import Evidence, Graph, Node, Port
-from bpreviewer.relation_agent import enrich_dataflow
+from bpreviewer.relation_agent import _probe_mimo, enrich_dataflow
 
 
 def test_ast_tools_do_not_execute_target_code_and_guard_scope(tmp_path: Path):
@@ -94,3 +95,42 @@ def test_ast_tools_reject_non_python_and_path_traversal(tmp_path: Path):
         inspect_file(tmp_path, "README.md")
     with pytest.raises((ValueError, FileNotFoundError, PermissionError)):
         inspect_file(tmp_path, "../escape.py")
+
+
+def test_mimo_tool_call_is_bounded_and_investigates_real_files(tmp_path: Path, monkeypatch):
+    (tmp_path / "example.py").write_text(
+        'def load():\\n    return read_csv("inventory.csv")\\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MIMO_API_KEY", "fake-only-for-unit-test")
+    observed = []
+
+    def create(**kwargs):
+        observed.append(kwargs)
+        if len(observed) == 1:
+            call = SimpleNamespace(
+                id="tool-1",
+                function=SimpleNamespace(name="trace_data_io", arguments='{"path":"example.py"}'),
+            )
+            message = SimpleNamespace(
+                tool_calls=[call],
+                model_dump=lambda **_kwargs: {
+                    "role": "assistant", "content": None,
+                    "tool_calls": [{"id": call.id, "type": "function",
+                                    "function": {"name": call.function.name, "arguments": call.function.arguments}}],
+                },
+            )
+        else:
+            message = SimpleNamespace(tool_calls=[], content='{"summary": "evidence collected"}')
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    monkeypatch.setattr(
+        "bpreviewer.relation_agent.OpenAI",
+        lambda **_kwargs: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),
+    )
+    assert _probe_mimo(tmp_path, ["example.py"]) == 1
+    assert len(observed) == 2
+    result_messages = observed[1]["messages"]
+    tool_reply = next(m for m in result_messages if m["role"] == "tool")
+    assert "inventory.csv" in tool_reply["content"]
+    assert "example.py" in tool_reply["content"]
