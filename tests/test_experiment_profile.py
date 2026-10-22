@@ -96,16 +96,18 @@ def test_single_file_workflow_can_expose_steps_without_executing_file(tmp_path):
         'raise RuntimeError("must not run")\n'
         'def load_dataset():\n    return "input"\n'
         'def select_model():\n    return "model"\n'
-        'def train_model(epochs=5):\n    return 1\n'
-        'def evaluate_model(scores):\n    return len(scores)\n',
+        "def train_model(epochs=5):\n    return 1\n"
+        "def evaluate_model(scores):\n    return len(scores)\n",
         encoding="utf-8",
     )
     snapshot = scan(root)
     file_node = next(node for node in snapshot.graph.nodes if node.id == "file:only.py")
-    graph = Graph(nodes=[
-        Node(id="logical:single", label="单文件实验", kind="logical_module"),
-        file_node.model_copy(update={"kind": "code_file", "parent": "logical:single"}),
-    ])
+    graph = Graph(
+        nodes=[
+            Node(id="logical:single", label="单文件实验", kind="logical_module"),
+            file_node.model_copy(update={"kind": "code_file", "parent": "logical:single"}),
+        ]
+    )
     updated, info = annotate_workflows(root, graph)
     assert info["workflow_steps"] >= 2
     assert sum(1 for node in updated.nodes if node.parent == "logical:single" and node.kind == "logical_module") >= 2
@@ -116,11 +118,18 @@ def test_missing_record_is_not_fabricated(tmp_path):
     root = tmp_path / "empty"
     root.mkdir()
     (root / "task.py").write_text("def train_model(): return 2\n", encoding="utf-8")
-    graph = Graph(nodes=[
-        Node(id="logic", label="模型训练", kind="logical_module"),
-        Node(id="file:task.py", label="task.py", kind="code_file", parent="logic",
-             evidence=[Evidence(path="task.py")]),
-    ])
+    graph = Graph(
+        nodes=[
+            Node(id="logic", label="模型训练", kind="logical_module"),
+            Node(
+                id="file:task.py",
+                label="task.py",
+                kind="code_file",
+                parent="logic",
+                evidence=[Evidence(path="task.py")],
+            ),
+        ]
+    )
     updated, _ = annotate_workflows(root, graph)
     profile = next(node for node in updated.nodes if node.id == "logic").parameters["analysis_profile"]
     assert not profile["runs"]

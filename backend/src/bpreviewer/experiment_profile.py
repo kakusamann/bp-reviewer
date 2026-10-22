@@ -3,6 +3,7 @@
 Produces compact, user-facing profiles grounded in AST/config/result evidence.
 No inspected project code is imported or executed, and no project files are changed.
 """
+
 from __future__ import annotations
 
 import ast
@@ -47,8 +48,10 @@ def _literal(node: ast.AST) -> Any:
         return None
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
-    if isinstance(value, (list, tuple)) and len(value) <= 24 and all(
-        isinstance(item, (str, int, float, bool)) for item in value
+    if (
+        isinstance(value, (list, tuple))
+        and len(value) <= 24
+        and all(isinstance(item, (str, int, float, bool)) for item in value)
     ):
         return list(value)
     return None
@@ -71,51 +74,93 @@ def _source_facts(root: Path, path: str) -> dict[str, Any]:
             for argument, default in zip(reversed(node.args.args), reversed(node.args.defaults)):
                 value = _literal(default)
                 if value is not None and isinstance(value, (str, int, float, bool)):
-                    if any(word in argument.arg.lower() for word in (
-                        "model", "dim", "epoch", "batch", "rate", "learning", "seed",
-                        "threshold", "optimizer", "margin", "dropout", "metric", "device"
-                    )):
-                        facts["parameters"].append({
-                            "name": argument.arg, "value": value, "source": "函数默认值",
-                            "path": path, "line": node.lineno,
-                        })
+                    if any(
+                        word in argument.arg.lower()
+                        for word in (
+                            "model",
+                            "dim",
+                            "epoch",
+                            "batch",
+                            "rate",
+                            "learning",
+                            "seed",
+                            "threshold",
+                            "optimizer",
+                            "margin",
+                            "dropout",
+                            "metric",
+                            "device",
+                        )
+                    ):
+                        facts["parameters"].append(
+                            {
+                                "name": argument.arg,
+                                "value": value,
+                                "source": "函数默认值",
+                                "path": path,
+                                "line": node.lineno,
+                            }
+                        )
         elif isinstance(node, ast.ClassDef):
             class_name = node.name
             if any(token in class_name.lower() for token in ("model", "network", "encoder", "classifier")):
-                facts["models"].append({
-                    "name": class_name, "source": "class", "path": path, "line": node.lineno,
-                })
+                facts["models"].append(
+                    {
+                        "name": class_name,
+                        "source": "class",
+                        "path": path,
+                        "line": node.lineno,
+                    }
+                )
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
-            target = node.targets[0] if isinstance(node, ast.Assign) and node.targets else (
-                node.target if isinstance(node, ast.AnnAssign) else None
+            target = (
+                node.targets[0]
+                if isinstance(node, ast.Assign) and node.targets
+                else (node.target if isinstance(node, ast.AnnAssign) else None)
             )
             value = node.value
             if not isinstance(target, ast.Name) or value is None:
                 continue
             identifier = target.id
-            if identifier.lower() in {"model_registry", "models", "algorithms", "available_models"} and isinstance(value, ast.Dict):
+            if identifier.lower() in {"model_registry", "models", "algorithms", "available_models"} and isinstance(
+                value, ast.Dict
+            ):
                 for key, impl in zip(value.keys, value.values):
                     name = _literal(key) if key is not None else None
                     if isinstance(name, str):
-                        facts["models"].append({
-                            "name": name[:80], "source": "模型注册表",
-                            "implementation": ast.unparse(impl)[:100],
-                            "path": path, "line": node.lineno,
-                        })
-            if identifier.isupper() or any(token in identifier.lower() for token in (
-                "model", "learning_rate", "epochs", "batch_size", "embedding_dim"
-            )):
+                        facts["models"].append(
+                            {
+                                "name": name[:80],
+                                "source": "模型注册表",
+                                "implementation": ast.unparse(impl)[:100],
+                                "path": path,
+                                "line": node.lineno,
+                            }
+                        )
+            if identifier.isupper() or any(
+                token in identifier.lower()
+                for token in ("model", "learning_rate", "epochs", "batch_size", "embedding_dim")
+            ):
                 val = _literal(value)
                 if isinstance(val, (str, int, float, bool)):
-                    facts["parameters"].append({
-                        "name": identifier, "value": val, "source": "代码常量",
-                        "path": path, "line": node.lineno,
-                    })
+                    facts["parameters"].append(
+                        {
+                            "name": identifier,
+                            "value": val,
+                            "source": "代码常量",
+                            "path": path,
+                            "line": node.lineno,
+                        }
+                    )
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             value = node.value.replace("\\", "/").strip()
-            if (value.endswith((".json", ".toml", ".csv", ".parquet", ".tsv"))
-                    and len(value) <= 200 and not value.startswith(("/", "~"))
-                    and "://" not in value and ".." not in PurePosixPath(value).parts):
+            if (
+                value.endswith((".json", ".toml", ".csv", ".parquet", ".tsv"))
+                and len(value) <= 200
+                and not value.startswith(("/", "~"))
+                and "://" not in value
+                and ".." not in PurePosixPath(value).parts
+            ):
                 facts["artifacts"].append({"path": value, "source_path": path, "line": node.lineno})
     return facts
 
@@ -154,8 +199,14 @@ def _flatten_values(data: dict[str, Any], prefix: str = "", *, limit: int = 40) 
 def _steps_for_module(root: Path, paths: list[str]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     profile: dict[str, Any] = {
         "summary": "基于实际源码、配置与结果文件建立的技术/实验工作流说明。",
-        "inputs": [], "outputs": [], "workflow": [], "models": [],
-        "parameters": [], "metrics": [], "runs": [], "source_files": paths[:30],
+        "inputs": [],
+        "outputs": [],
+        "workflow": [],
+        "models": [],
+        "parameters": [],
+        "metrics": [],
+        "runs": [],
+        "source_files": paths[:30],
         "limitations": [],
     }
     stages: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -187,29 +238,48 @@ def _steps_for_module(root: Path, paths: list[str]) -> tuple[dict[str, Any], lis
         if any(token in artifact.lower() for token in RESULT_TOKENS) and isinstance(document.get("metrics"), dict):
             name = _text(document.get("model", "未标注模型"))
             run_id = _text(document.get("run_id", "未标注运行编号"))
-            profile["runs"].append({
-                "name": name, "run_id": run_id, "file": artifact,
-                "status": "发现结果记录；不代表已独立复现",
-            })
+            profile["runs"].append(
+                {
+                    "name": name,
+                    "run_id": run_id,
+                    "file": artifact,
+                    "status": "发现结果记录；不代表已独立复现",
+                }
+            )
             for metric in _flatten_values(document["metrics"], limit=20):
-                profile["metrics"].append({
-                    **metric, "path": artifact, "line": 1,
-                    "model": name, "run_id": run_id,
-                })
+                profile["metrics"].append(
+                    {
+                        **metric,
+                        "path": artifact,
+                        "line": 1,
+                        "model": name,
+                        "run_id": run_id,
+                    }
+                )
         elif not any(token in artifact.lower() for token in RESULT_TOKENS):
             for parameter in _flatten_values(document, limit=36):
-                profile["parameters"].append({
-                    **parameter, "path": artifact, "line": 1, "source": "配置文件",
-                })
+                profile["parameters"].append(
+                    {
+                        **parameter,
+                        "path": artifact,
+                        "line": 1,
+                        "source": "配置文件",
+                    }
+                )
     for stage in STAGE_ORDER:
         facts = stages.get(stage, [])
         if facts:
-            profile["workflow"].append({
-                "key": stage, "title": STAGE_TITLES[stage],
-                "summary": f"识别到 {len(facts)} 个相关函数；此分组不代表已确认执行顺序。",
-                "functions": facts[:10], "path": facts[0]["path"], "line": facts[0]["line"],
-                "basis": "静态函数职责线索",
-            })
+            profile["workflow"].append(
+                {
+                    "key": stage,
+                    "title": STAGE_TITLES[stage],
+                    "summary": f"识别到 {len(facts)} 个相关函数；此分组不代表已确认执行顺序。",
+                    "functions": facts[:10],
+                    "path": facts[0]["path"],
+                    "line": facts[0]["line"],
+                    "basis": "静态函数职责线索",
+                }
+            )
     for key in ("models", "parameters", "metrics", "inputs", "outputs"):
         unique = []
         seen = set()
@@ -273,21 +343,38 @@ def annotate_workflows(root: Path, graph: Graph, *, generate_steps: bool = True)
             id_ = "agent:step:" + hashlib.sha256((node.id + "|" + step["key"]).encode()).hexdigest()[:20]
             if id_ in by_id:
                 continue
-            added.append(Node(
-                id=id_, label=step["title"], kind="logical_module", parent=node.id,
-                description=step["summary"],
-                parameters={"workflow_step": True, "analysis_profile": {
-                    "summary": step["summary"], "inputs": [], "outputs": [], "workflow": [step],
-                    "models": profile["models"] if step["key"] == "model" else [],
-                    "parameters": profile["parameters"] if step["key"] in {"model", "execute"} else [],
-                    "metrics": profile["metrics"] if step["key"] == "evaluate" else [],
-                    "runs": profile["runs"] if step["key"] == "evaluate" else [],
-                    "source_files": [step["path"]],
-                    "limitations": ["功能步骤按静态证据归类，不能据此认定运行时先后顺序。"],
-                }},
-                evidence=[Evidence(path=step["path"], line=step["line"],
-                                   status="STATIC_INFERRED", note="函数名称与行号来自实际源码。")],
-            ))
+            added.append(
+                Node(
+                    id=id_,
+                    label=step["title"],
+                    kind="logical_module",
+                    parent=node.id,
+                    description=step["summary"],
+                    parameters={
+                        "workflow_step": True,
+                        "analysis_profile": {
+                            "summary": step["summary"],
+                            "inputs": [],
+                            "outputs": [],
+                            "workflow": [step],
+                            "models": profile["models"] if step["key"] == "model" else [],
+                            "parameters": profile["parameters"] if step["key"] in {"model", "execute"} else [],
+                            "metrics": profile["metrics"] if step["key"] == "evaluate" else [],
+                            "runs": profile["runs"] if step["key"] == "evaluate" else [],
+                            "source_files": [step["path"]],
+                            "limitations": ["功能步骤按静态证据归类，不能据此认定运行时先后顺序。"],
+                        },
+                    },
+                    evidence=[
+                        Evidence(
+                            path=step["path"],
+                            line=step["line"],
+                            status="STATIC_INFERRED",
+                            note="函数名称与行号来自实际源码。",
+                        )
+                    ],
+                )
+            )
     if added:
         graph.nodes.extend(added)
     return Graph.model_validate(graph), {
