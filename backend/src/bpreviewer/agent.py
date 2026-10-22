@@ -20,11 +20,12 @@ from pydantic import ValidationError
 
 from .models import Edge, Evidence, Graph, Node, Port, Snapshot
 from .hierarchy import hierarchical_projection
+from .relation_agent import enrich_dataflow
 from .scanner import directory_tree, safe_file
 from .structure import domain_for_path, project_catalog
 
 
-PROMPT_VERSION = "semantic-blueprint-v3-recursive-scoped"
+PROMPT_VERSION = "semantic-blueprint-v4-evidence-agent"
 CORE_TERMS = {
     "main",
     "app",
@@ -1077,6 +1078,8 @@ def _validate_and_build(state: BlueprintState) -> dict[str, Any]:
         domain_labels=state.get("domain_labels", {}),
         scope_paths=state.get("scope_paths"),
     )
+    graph, analysis = enrich_dataflow(root, graph)
+    metadata.update(analysis)
     return {"result": {"graph": graph.model_dump(), "metadata": metadata}}
 
 
