@@ -487,9 +487,10 @@ def _build_graph(root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]]
             parent = Path(path).parent.as_posix()
             label = parent if parent != "." else "项目根目录"
             unassigned_by_dir.setdefault(label, []).append(path)
+    used_module_keys = {module["key"] for module in modules}
     for directory, paths in sorted(unassigned_by_dir.items()):
         modules.append({
-            "key": "unreviewed_" + _slug(directory),
+            "key": _unique_id("unreviewed_" + _slug(directory), used_module_keys),
             "name": "未分析文件 · " + directory,
             "description": "这些文件未发送给 MiMo；按实际目录聚合，以降低 Token 消耗。双击模块可查看文件。",
             "member_paths": sorted(paths),
@@ -734,7 +735,6 @@ def _build_graph(root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]]
     # Resolve literal read/write paths locally. No file contents are sent to the model.
     artifact_by_path = set(artifact_ids)
     path_to_artifact = {path.replace("\\", "/"): artifact_id for path, artifact_id in artifact_ids.items()}
-    io_edges_seen: set[tuple[str, str, str, int]] = set()
     for code_path in file_nodes:
         try:
             code_file = safe_file(root, code_path)
@@ -753,10 +753,6 @@ def _build_graph(root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]]
             matched = next((path for path in possible_paths if path in artifact_by_path), None)
             if not matched:
                 continue
-            signature = (matched, source_module, direction, line)
-            if signature in io_edges_seen:
-                continue
-            io_edges_seen.add(signature)
             proof = Evidence(
                 path=code_path, line=max(1, line),
                 sha256=hashlib.sha256(raw).hexdigest(),
@@ -767,7 +763,8 @@ def _build_graph(root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]]
                 source_id, source_port, target_id, target_port = path_to_artifact[matched], "out", source_module, "in"
             else:
                 source_id, source_port, target_id, target_port = source_module, "out", path_to_artifact[matched], "in"
-            edge_id = hashlib.sha256(f"{matched}|{source_module}|{direction}|{line}".encode()).hexdigest()[:24]
+            # One module-level file-flow edge, retaining every matching read/write site as evidence.
+            edge_id = hashlib.sha256(f"{matched}|{source_module}|{direction}".encode()).hexdigest()[:24]
             add_edge(Edge(
                 id="agent:file-io:" + edge_id,
                 source=source_id, source_port=source_port,
