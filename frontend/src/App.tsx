@@ -111,6 +111,9 @@ function Workbench() {
     local_rebuild?: boolean;
     scope_label?: string;
     scope_files?: number;
+    ast_data_ports?: number;
+    ast_data_relations?: number;
+    agent_tool_calls?: number;
   }>();
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [mode, setMode] = useState<"As-is" | "Proposed" | "Diff">("As-is");
@@ -955,6 +958,10 @@ function Workbench() {
                   {analysisMeta.local_rebuild
                     ? `局部重建：${analysisMeta.scope_label || "当前模块"}`
                     : `递归整理功能域：${analysisMeta.recursive_domains_built ?? 0}/${analysisMeta.recursive_domains_total ?? "—"}`}
+                  <br />
+                  AST 数据端口 {analysisMeta.ast_data_ports ?? 0} · 有证据的数据连接 {analysisMeta.ast_data_relations ?? 0}
+                  <br />
+                  Agent 工具调用 {analysisMeta.agent_tool_calls ?? 0} 次
                   <br />
                   {analysisMeta.cache_hit ? "使用缓存结果" : "本次调用模型"}
                 </p>
