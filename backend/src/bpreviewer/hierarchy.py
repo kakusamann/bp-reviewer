@@ -42,7 +42,9 @@ def hierarchical_projection(
         )
     )
 
-    indexed_files = {node.evidence[0].path: node for node in retained if node.evidence and node.id == "file:" + node.evidence[0].path}
+    indexed_files = {
+        node.evidence[0].path: node for node in retained if node.evidence and node.id == "file:" + node.evidence[0].path
+    }
     domain_ids = {}
     for group in catalog:
         key = group["key"]

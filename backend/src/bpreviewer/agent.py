@@ -342,7 +342,11 @@ def _select_candidates(state: BlueprintState) -> dict[str, Any]:
     max_files = max(
         1,
         min(
-            int(os.environ.get("MIMO_MAX_SCOPED_ANALYSIS_FILES", "4") if scoped else os.environ.get("MIMO_MAX_ANALYSIS_FILES", "8")),
+            int(
+                os.environ.get("MIMO_MAX_SCOPED_ANALYSIS_FILES", "4")
+                if scoped
+                else os.environ.get("MIMO_MAX_ANALYSIS_FILES", "8")
+            ),
             8 if scoped else 12,
         ),
     )
@@ -350,7 +354,11 @@ def _select_candidates(state: BlueprintState) -> dict[str, Any]:
     total_budget = max(
         4000 if scoped else 8000,
         min(
-            int(os.environ.get("MIMO_MAX_SCOPED_TOTAL_CHARS", "12000") if scoped else os.environ.get("MIMO_MAX_TOTAL_CHARS", "22000")),
+            int(
+                os.environ.get("MIMO_MAX_SCOPED_TOTAL_CHARS", "12000")
+                if scoped
+                else os.environ.get("MIMO_MAX_TOTAL_CHARS", "22000")
+            ),
             16000 if scoped else 32000,
         ),
     )
@@ -658,7 +666,9 @@ def _build_graph(
     used_ids = {node.id for node in snapshot.graph.nodes}
     warnings: list[str] = []
     file_nodes = {
-        node.evidence[0].path: node for node in snapshot.graph.nodes if node.evidence and node.id == "file:" + node.evidence[0].path
+        node.evidence[0].path: node
+        for node in snapshot.graph.nodes
+        if node.evidence and node.id == "file:" + node.evidence[0].path
     }
     summary_by_path = {item["path"]: item for item in summaries}
     modules = list(proposal["modules"])
@@ -1202,7 +1212,9 @@ def _scope_paths_for_node(root: Path, snapshot: Snapshot, graph: Graph, scope_no
     static_python_paths = {
         node.evidence[0].path
         for node in snapshot.graph.nodes
-        if node.evidence and node.id == "file:" + node.evidence[0].path and Path(node.evidence[0].path).suffix.lower() == ".py"
+        if node.evidence
+        and node.id == "file:" + node.evidence[0].path
+        and Path(node.evidence[0].path).suffix.lower() == ".py"
     }
     paths = {
         proof.path

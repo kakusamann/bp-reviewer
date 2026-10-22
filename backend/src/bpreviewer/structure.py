@@ -76,7 +76,9 @@ def fallback_label(key: str) -> str:
 def project_catalog(snapshot: Snapshot, entries: list[dict]) -> list[dict]:
     """Group all scan-visible source paths by functional area, not by individual file."""
     files = {
-        node.evidence[0].path: node for node in snapshot.graph.nodes if node.evidence and node.id == "file:" + node.evidence[0].path
+        node.evidence[0].path: node
+        for node in snapshot.graph.nodes
+        if node.evidence and node.id == "file:" + node.evidence[0].path
     }
     for entry in entries:
         if entry.get("kind") != "file" or entry.get("sensitive"):
