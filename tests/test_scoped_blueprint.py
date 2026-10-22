@@ -159,6 +159,7 @@ def test_scoped_rebuild_replaces_only_selected_subtree(tmp_path, monkeypatch):
     assert "domain:kg" in nodes
     assert "agent:module:old-kg" not in nodes
     assert nodes["agent:module:new-kg"].parent == "domain:kg"
+    assert "file:src/kg/ontology.py" in nodes, [(node.id, node.kind, [proof.path for proof in node.evidence]) for node in merged.nodes]
     assert nodes["file:src/kg/ontology.py"].parent == "agent:module:new-kg"
     assert nodes["agent:module:other"].description == "untouched"
     assert nodes["file:src/matching/retriever.py"].parent == "agent:module:other"
