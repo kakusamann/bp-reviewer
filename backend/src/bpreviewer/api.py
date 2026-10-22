@@ -28,7 +28,6 @@ class Proposal(Model):
 
 class ScopedBlueprintRequest(Model):
     scope_node_id: str = Field(min_length=1, max_length=512)
-    graph: Graph
 
 
 def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
@@ -118,7 +117,7 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
         root = project_root(key)
         try:
             return rebuild_semantic_blueprint_scope(
-                root, snapshot, request.graph, request.scope_node_id, store.state, force_refresh=True
+                root, snapshot, None, request.scope_node_id, store.state, force_refresh=True
             )
         except AgentConfigurationError as error:
             raise HTTPException(503, str(error)) from error
