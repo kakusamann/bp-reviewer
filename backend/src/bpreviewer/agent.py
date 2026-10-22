@@ -1119,6 +1119,7 @@ def build_semantic_blueprint(
     force_refresh: bool = False,
     scope_paths: list[str] | None = None,
     recursive: bool = True,
+    progress_callback: Any = None,
 ) -> dict[str, Any]:
     """Build a cached logical blueprint, optionally restricted to a subtree's files."""
     model = os.environ.get("MIMO_MODEL", "mimo-v2.5-pro").strip()
@@ -1129,6 +1130,8 @@ def build_semantic_blueprint(
         try:
             result = json.loads(cache_path.read_text(encoding="utf-8"))
             result.setdefault("metadata", {})["cache_hit"] = True
+            if progress_callback:
+                progress_callback("cache", "复用已经完成的蓝图缓存", 1, 1)
             return result
         except (OSError, json.JSONDecodeError):
             pass
@@ -1144,7 +1147,32 @@ def build_semantic_blueprint(
         "scope_paths": sorted(set(scope_paths)) if scope_paths is not None else None,
         "warnings": [],
     }
-    result = _workflow().invoke(initial)["result"]
+    stage_order = [
+        ("index_project", "全项目文件与结构索引"),
+        ("label_domains", "MiMo 功能域命名"),
+        ("select_candidates", "选择代表性代码与证据"),
+        ("summarize_candidates", "分析文件功能摘要"),
+        ("aggregate_modules", "聚合业务逻辑模块"),
+        ("validate_and_build", "静态 I/O 工具调查、关系验证与图谱构建"),
+        ("persist_result", "保存蓝图缓存"),
+    ]
+    if progress_callback:
+        progress_callback(stage_order[0][0], stage_order[0][1], 0, len(stage_order))
+    result = None
+    for update in _workflow().stream(initial, stream_mode="updates"):
+        for name, output in update.items():
+            if name == "validate_and_build":
+                result = output["result"]
+            index = next((i for i, stage in enumerate(stage_order) if stage[0] == name), -1)
+            if progress_callback and index >= 0:
+                next_stage = stage_order[index + 1] if index + 1 < len(stage_order) else None
+                progress_callback(
+                    next_stage[0] if next_stage else "base_complete",
+                    next_stage[1] if next_stage else "基础蓝图构建完成",
+                    index + 1, len(stage_order),
+                )
+    if result is None:
+        raise AgentExecutionError("蓝图工作流没有产生有效结果")
     if recursive and scope_paths is None:
         graph = Graph.model_validate(result["graph"])
         domain_nodes = [
@@ -1166,10 +1194,17 @@ def build_semantic_blueprint(
                 eligible.append(node.id)
         completed = 0
         recursion_warnings = []
-        for scope_id in eligible[:max_domains]:
+        for index, scope_id in enumerate(eligible[:max_domains]):
+            if progress_callback:
+                progress_callback(
+                    "recursive_domains",
+                    f"递归细化功能域 {index + 1}/{min(len(eligible), max_domains)}：{next((n.label for n in graph.nodes if n.id == scope_id), scope_id)}",
+                    index, min(len(eligible), max_domains),
+                )
             try:
                 refreshed = rebuild_semantic_blueprint_scope(
-                    root, snapshot, graph, scope_id, state_dir, force_refresh=force_refresh
+                    root, snapshot, graph, scope_id, state_dir, force_refresh=force_refresh,
+                    progress_callback=progress_callback,
                 )
                 graph = Graph.model_validate(refreshed["graph"])
                 completed += 1
@@ -1186,6 +1221,8 @@ def build_semantic_blueprint(
         temporary = cache_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
         temporary.replace(cache_path)
+    if progress_callback:
+        progress_callback("complete", "全局逻辑蓝图已完成并保存", 1, 1)
     return result
 
 
@@ -1350,6 +1387,7 @@ def rebuild_semantic_blueprint_scope(
     scope_node_id: str,
     state_dir: Path,
     force_refresh: bool = True,
+    progress_callback: Any = None,
 ) -> dict[str, Any]:
     """Re-analyze one logical module and atomically replace only its descendants."""
     root = root.resolve(strict=True)
@@ -1419,6 +1457,7 @@ def rebuild_semantic_blueprint_scope(
         force_refresh=force_refresh,
         scope_paths=all_paths,
         recursive=False,
+        progress_callback=progress_callback,
     )
     generated_graph = Graph.model_validate(generated_result["graph"])
     merged = _merge_scoped_graph(
@@ -1451,4 +1490,6 @@ def rebuild_semantic_blueprint_scope(
     temporary = global_cache_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(global_cache, ensure_ascii=False), encoding="utf-8")
     temporary.replace(global_cache_path)
+    if progress_callback:
+        progress_callback("local_saved", "局部蓝图已更新，其余模块保持不变", 1, 1)
     return {"graph": merged.model_dump(), "metadata": metadata}
