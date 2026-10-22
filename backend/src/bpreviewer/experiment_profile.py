@@ -34,7 +34,6 @@ STAGE_TITLES = {
 }
 STAGE_ORDER = tuple(STAGE_WORDS)
 RELEVANT_CONFIG_SUFFIXES = {".json", ".toml"}
-RESULT_TOKENS = ("result", "metric", "evaluation", "benchmark", "history", "experiment")
 
 
 def _text(value: Any, limit: int = 160) -> str:
@@ -235,7 +234,7 @@ def _steps_for_module(root: Path, paths: list[str]) -> tuple[dict[str, Any], lis
         document = _read_small_document(root, artifact)
         if document is None:
             continue
-        if any(token in artifact.lower() for token in RESULT_TOKENS) and isinstance(document.get("metrics"), dict):
+        if isinstance(document.get("metrics"), dict) and ("run_id" in document or "model" in document):
             name = _text(document.get("model", "未标注模型"))
             run_id = _text(document.get("run_id", "未标注运行编号"))
             profile["runs"].append(
@@ -256,7 +255,7 @@ def _steps_for_module(root: Path, paths: list[str]) -> tuple[dict[str, Any], lis
                         "run_id": run_id,
                     }
                 )
-        elif not any(token in artifact.lower() for token in RESULT_TOKENS):
+        else:
             for parameter in _flatten_values(document, limit=36):
                 profile["parameters"].append(
                     {
