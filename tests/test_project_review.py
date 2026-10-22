@@ -168,6 +168,8 @@ def test_api_security_drafts_export_source_and_hashes(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     (project / "app.py").write_text("def app(x): return x\n")
+    (project / "notes.md").write_text("source-linked preview\n")
+    (project / ".env").write_text("MIMO_API_KEY=not-a-real-key\n")
     app = create_app(tmp_path / "state", [project], "local-test-token")
     client = TestClient(app)
     assert client.get("/api/projects").status_code == 401
@@ -181,8 +183,15 @@ def test_api_security_drafts_export_source_and_hashes(tmp_path):
     key = snapshot["id"]
     url = f"/api/snapshots/{key}"
     assert client.get(url + "/source", params={"path": "../secret"}).status_code == 403
+    tree = client.get(url + "/tree").json()
+    assert any(entry["path"] == "notes.md" for entry in tree["entries"])
+    secret_entry = next(entry for entry in tree["entries"] if entry["path"] == ".env")
+    assert secret_entry["sensitive"] and not secret_entry["previewable"]
+    assert client.get(url + "/source", params={"path": ".env"}).status_code == 415
+    unindexed = client.get(url + "/source", params={"path": "notes.md"}).json()
+    assert not unindexed["indexed"] and "source-linked preview" in unindexed["content"]
     source = client.get(url + "/source", params={"path": "app.py"}).json()
-    assert not source["stale"] and "def app" in source["content"]
+    assert not source["stale"] and source["indexed"] and "def app" in source["content"]
     before = fingerprints(project)
     assert client.put(url + "/draft", json={"graph": snapshot["graph"], "revision": 0}).status_code == 200
     assert client.put(url + "/draft", json={"graph": snapshot["graph"], "revision": 0}).status_code == 409

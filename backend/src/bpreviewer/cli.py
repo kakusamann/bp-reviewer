@@ -5,6 +5,8 @@ import os
 import secrets
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 def main():
     parser = argparse.ArgumentParser(description="BP-Reviewer local inspection API")
@@ -12,6 +14,8 @@ def main():
     parser.add_argument("--state", type=Path, default=Path("state"))
     parser.add_argument("--port", type=int, default=8011)
     args = parser.parse_args()
+    # Load local model settings from the BP-Reviewer repository root; never expose them to the frontend.
+    load_dotenv(Path.cwd() / ".env", override=False)
     token = os.environ.get("BPREVIEWER_TOKEN") or secrets.token_urlsafe(32)
     from .api import create_app
     import uvicorn

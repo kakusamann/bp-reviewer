@@ -205,13 +205,13 @@ if (-not $envFound) {
 }
 $probeLines = @()
 try {
-    $probeLines = @(& conda run -n bpreviewer python -c "import bpreviewer, fastapi, pydantic, uvicorn" 2>&1)
+    $probeLines = @(& conda run -n bpreviewer python -c "import bpreviewer, fastapi, pydantic, uvicorn, langgraph, openai, dotenv" 2>&1)
 } catch {
     $probeLines = @($_.Exception.Message)
 }
 if ($LASTEXITCODE -ne 0) {
     $probeText = ($probeLines | Out-String).Trim()
-    Write-Fail ("bpreviewer 环境缺少后端依赖（bpreviewer/fastapi/pydantic/uvicorn 导入检查未通过）。`n探测输出:`n{0}`n修复: 在仓库根目录执行:`n  conda run -n bpreviewer python -m pip install -e `".\backend[dev]`"" -f $probeText)
+    Write-Fail ("bpreviewer 环境缺少后端依赖（bpreviewer/fastapi/pydantic/uvicorn/langgraph/openai/python-dotenv 导入检查未通过）。`n探测输出:`n{0}`n修复: 在仓库根目录执行:`n  conda run -n bpreviewer python -m pip install -e `".\backend[dev]`"" -f $probeText)
 }
 
 # ---- Step 5: Node.js / npm check ----

@@ -25,6 +25,7 @@ import type {
   Port,
   ProjectNode,
   Snapshot,
+  DirectoryEntry,
 } from "./types";
 import "@xyflow/react/dist/style.css";
 
@@ -35,7 +36,7 @@ type CardData = {
 };
 function Card({ data }: NodeProps<Node<CardData>>) {
   return (
-    <article className="card">
+    <article className="card" data-kind={data.item.kind}>
       <small>
         {data.item.kind} · {data.editable ? "UNVERIFIED · 拟议" : data.item.evidence[0]?.status || "UNVERIFIED"}
       </small>
@@ -77,6 +78,22 @@ function Workbench() {
   );
   const [path, setPath] = useState("");
   const [roots, setRoots] = useState<string[]>([]);
+  const [treeEntries, setTreeEntries] = useState<DirectoryEntry[]>([]);
+  const [treeQuery, setTreeQuery] = useState("");
+  const [expandedDirs, setExpandedDirs] = useState<string[]>([]);
+  const [selectedPath, setSelectedPath] = useState("");
+  const [treeTruncated, setTreeTruncated] = useState(false);
+  const [semanticGraph, setSemanticGraph] = useState<Graph>();
+  const [viewMode, setViewMode] = useState<"static" | "logical">("static");
+  const [analysisMeta, setAnalysisMeta] = useState<{
+    model: string;
+    analyzed_files: number;
+    logical_modules: number;
+    data_artifacts: number;
+    unreviewed_files: number;
+    cache_hit: boolean;
+    warnings: string[];
+  }>();
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [mode, setMode] = useState<"As-is" | "Proposed" | "Diff">("As-is");
   const [history, dispatch] = useReducer(historyReducer, {
@@ -103,7 +120,10 @@ function Workbench() {
   const [paramsText, setParamsText] = useState("");
   const flow = useReactFlow();
   const editable = mode === "Proposed";
-  const graph = mode === "As-is" ? snapshot?.graph || empty : history.present;
+  const graph =
+    mode === "As-is"
+      ? (viewMode === "logical" && semanticGraph ? semanticGraph : snapshot?.graph || empty)
+      : history.present;
   const current = graph.nodes.find((n) => n.id === selected);
   const edit = (next: Graph) => {
     dispatch({ type: "edit", graph: next });
@@ -171,8 +191,45 @@ function Workbench() {
             : n.id === scope || n.parent === scope)) &&
         (!query || n.label.toLowerCase().includes(query.toLowerCase())),
     );
-    return primary;
+    const visibleIds = new Set(primary.map((node) => node.id));
+    if (scope !== "modules" && scope !== "all") {
+      const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+      for (const edge of graph.edges) {
+        const sourceInside = visibleIds.has(edge.source);
+        const targetInside = visibleIds.has(edge.target);
+        if (sourceInside === targetInside) continue;
+        const externalId = sourceInside ? edge.target : edge.source;
+        const external = nodeById.get(externalId);
+        if (external && ["logical_module", "data_artifact"].includes(external.kind)) {
+          visibleIds.add(externalId);
+        }
+      }
+    }
+    return graph.nodes.filter((node) => visibleIds.has(node.id));
   }, [graph, scope, query]);
+  const visibleTreeEntries = useMemo(() => {
+    if (!treeQuery.trim()) {
+      return treeEntries.filter((entry) => !entry.parent || expandedDirs.includes(entry.parent));
+    }
+    const queryText = treeQuery.trim().toLowerCase();
+    const byPath = new Map(treeEntries.map((entry) => [entry.path, entry]));
+    const allowed = new Set<string>();
+    for (const entry of treeEntries) {
+      if ((entry.name + " " + entry.path).toLowerCase().includes(queryText)) {
+        let current: DirectoryEntry | undefined = entry;
+        while (current) {
+          allowed.add(current.path);
+          current = current.parent ? byPath.get(current.parent) : undefined;
+        }
+        if (entry.kind === "directory") {
+          for (const child of treeEntries) {
+            if (child.path.startsWith(entry.path + "/")) allowed.add(child.path);
+          }
+        }
+      }
+    }
+    return treeEntries.filter((entry) => allowed.has(entry.path));
+  }, [treeEntries, treeQuery, expandedDirs]);
   const renderedNodes: Node[] = visible.map((n, i) => ({
     id: n.id,
     type: "project",
@@ -211,7 +268,6 @@ function Workbench() {
   useEffect(() => {
     setPortsText(current ? JSON.stringify(current.ports, null, 2) : "");
     setParamsText(current ? JSON.stringify(current.parameters, null, 2) : "");
-    setSource("");
   }, [selected, mode, snapshot?.id]);
   useEffect(() => {
     if (snapshot && editable)
@@ -235,10 +291,22 @@ function Workbench() {
         method: "POST",
         body: JSON.stringify({ path }),
       });
+      const tree = await api<{ entries: DirectoryEntry[]; truncated: boolean }>(
+        "/api/snapshots/" + data.id + "/tree",
+      );
       const saved = await api<{ graph: Graph; revision: number }>(
         `/api/snapshots/${data.id}/draft`,
       );
       setSnapshot(data);
+      setTreeEntries(tree.entries);
+      setTreeTruncated(tree.truncated);
+      setExpandedDirs([]);
+      setTreeQuery("");
+      setSelectedPath("");
+      setSource("");
+      setSemanticGraph(undefined);
+      setAnalysisMeta(undefined);
+      setViewMode("static");
       dispatch({ type: "reset", graph: saved.graph });
       setRevision(saved.revision);
       setMode("As-is");
@@ -278,19 +346,45 @@ function Workbench() {
     a.click();
     URL.revokeObjectURL(url);
   };
-  const showSource = (p: Evidence) =>
+  const revealTreePath = (filePath: string) => {
+    setSelectedPath(filePath);
+    const parts = filePath.split("/");
+    const ancestors = parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
+    setExpandedDirs((previous) => Array.from(new Set([...previous, ...ancestors])));
+  };
+  const openSource = (filePath: string, line = 1) =>
     run(async () => {
+      revealTreePath(filePath);
+      const entry = treeEntries.find((item) => item.path === filePath);
+      if (entry && !entry.previewable) {
+        setSource(filePath + "\n\n该文件为敏感文件、非文本文件或超过大小限制，已禁用预览。");
+        return;
+      }
       const data = await api<{
         content: string;
         first_line: number;
         stale: boolean;
+        indexed: boolean;
       }>(
-        `/api/snapshots/${snapshot!.id}/source?path=${encodeURIComponent(p.path)}&line=${p.line}`,
+        "/api/snapshots/" + snapshot!.id + "/source?path=" + encodeURIComponent(filePath) + "&line=" + line,
       );
-      setSource(
-        `${p.path}:${data.first_line}${data.stale ? " · 源码已变化，需重新扫描" : ""}\n${data.content}`,
-      );
+      const flags = [
+        data.stale ? "源码已变化，需重新扫描" : "",
+        data.indexed ? "" : "目录文件（尚无图谱证据）",
+      ].filter(Boolean).join(" · ");
+      setSource(filePath + ":" + data.first_line + (flags ? " · " + flags : "") + "\n" + data.content);
     });
+  const showSource = (p: Evidence) => void openSource(p.path, p.line);
+  const openTreeFile = (entry: DirectoryEntry) => {
+    revealTreePath(entry.path);
+    const evidenceNode = graph.nodes.find((node) => node.evidence.some((proof) => proof.path === entry.path));
+    if (evidenceNode) {
+      setScope(evidenceNode.parent || evidenceNode.id);
+      setQuery("");
+      setSelected(evidenceNode.id);
+    }
+    void openSource(entry.path, 1);
+  };
   const layout = () => {
     const g = new dagre.graphlib.Graph();
     g.setGraph({ rankdir: "LR", nodesep: 70, ranksep: 100 });
@@ -384,11 +478,57 @@ function Workbench() {
               <button
                 className={mode === m ? "active" : ""}
                 key={m}
-                onClick={() => (m === "Diff" ? void review() : setMode(m))}
+                onClick={() => {
+                  if (m === "Diff") void review();
+                  else {
+                    setMode(m);
+                    if (m !== "As-is") setViewMode("static");
+                  }
+                }}
               >
                 {m}
               </button>
             ))}
+            {semanticGraph && mode === "As-is" && (
+              <>
+                <button
+                  className={viewMode === "static" ? "active" : ""}
+                  onClick={() => { setViewMode("static"); setSelected(""); setScope("modules"); }}
+                >
+                  静态证据
+                </button>
+                <button
+                  className={viewMode === "logical" ? "active" : ""}
+                  onClick={() => { setViewMode("logical"); setSelected(""); setScope("modules"); }}
+                >
+                  逻辑蓝图
+                </button>
+              </>
+            )}
+            <button
+              className="agent-action"
+              disabled={!snapshot || busy}
+              title="将少量核心 Python 代码片段发送到已配置的 MiMo API；不会上传完整项目或数据文件内容。"
+              onClick={() => void run(async () => {
+                if (!snapshot) return;
+                const result = await api<{ graph: Graph; metadata: NonNullable<typeof analysisMeta> }>(
+                  "/api/snapshots/" + snapshot.id + "/semantic-blueprint",
+                  { method: "POST" },
+                );
+                setSemanticGraph(result.graph);
+                setAnalysisMeta(result.metadata);
+                setMode("As-is");
+                setViewMode("logical");
+                setScope("modules");
+                setSelected("");
+                setEdgeId("");
+                setQuery("");
+                const cacheNote = result.metadata.cache_hit ? "（命中缓存，未重新调用模型）" : "";
+                setInfo("逻辑蓝图已生成：" + result.metadata.analyzed_files + " 个核心文件、" + result.metadata.logical_modules + " 个逻辑模块、" + result.metadata.data_artifacts + " 个数据资产节点。" + cacheNote);
+              })}
+            >
+              AI 构建逻辑蓝图
+            </button>
             <span>
               {snapshot.project_name} ·{" "}
               {snapshot.git_head?.slice(0, 10) || "无 Git HEAD"}
@@ -465,14 +605,73 @@ function Workbench() {
             <button onClick={() => void review()}>生成变更需求</button>
           </nav>
           <main>
-            <aside>
-              <h3>项目结构</h3>
-              <input
-                aria-label="搜索节点"
-                placeholder="搜索节点"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
+            <aside className="left-workspace">
+              <section className="tree-panel">
+                <div className="tree-heading">
+                  <h3>项目目录</h3>
+                  <span className="tree-count">{treeEntries.filter((entry) => entry.kind === "file").length}</span>
+                </div>
+                <input
+                  className="tree-search"
+                  aria-label="搜索项目文件"
+                  placeholder="查找文件或目录…"
+                  value={treeQuery}
+                  onChange={(e) => setTreeQuery(e.target.value)}
+                />
+                <div className="tree-scroll" role="tree" aria-label="实际项目目录">
+                  {visibleTreeEntries.map((entry) => {
+                    const expanded = expandedDirs.includes(entry.path) || Boolean(treeQuery.trim());
+                    if (entry.kind === "directory") {
+                      return (
+                        <button
+                          type="button"
+                          role="treeitem"
+                          aria-expanded={expanded}
+                          className="tree-row tree-folder"
+                          style={{ paddingLeft: 8 + entry.depth * 12 }}
+                          key={entry.path}
+                          onClick={() => setExpandedDirs((previous) =>
+                            previous.includes(entry.path)
+                              ? previous.filter((item) => item !== entry.path)
+                              : [...previous, entry.path]
+                          )}
+                          title={entry.path}
+                        >
+                          <span className="tree-chevron">{expanded ? "⌄" : "›"}</span>
+                          <span className="tree-folder-glyph">{expanded ? "▾" : "▸"}</span>
+                          <span className="tree-name">{entry.name}</span>
+                        </button>
+                      );
+                    }
+                    return (
+                      <button
+                        type="button"
+                        role="treeitem"
+                        className={"tree-row tree-file " + (selectedPath === entry.path ? "is-selected" : "")}
+                        style={{ paddingLeft: 23 + entry.depth * 12 }}
+                        key={entry.path}
+                        onClick={() => openTreeFile(entry)}
+                        title={entry.previewable ? entry.path : entry.path + " · 预览受限"}
+                      >
+                        <span className="tree-ext">{entry.extension ? entry.extension.slice(1).toUpperCase().slice(0, 4) : "FILE"}</span>
+                        <span className="tree-name">{entry.name}</span>
+                        {!entry.previewable && <span className="tree-lock">—</span>}
+                      </button>
+                    );
+                  })}
+                  {!treeEntries.length && <p className="tree-empty">扫描项目后显示实际目录结构。</p>}
+                  {treeTruncated && <p className="tree-empty">目录较大，已按安全上限截断。</p>}
+                  {treeQuery && !visibleTreeEntries.length && <p className="tree-empty">没有匹配的文件或目录。</p>}
+                </div>
+              </section>
+              <section className="blueprint-controls">
+                <h3>蓝图视图</h3>
+                <input
+                  aria-label="搜索节点"
+                  placeholder="搜索蓝图节点…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
               <select
                 aria-label="视图层级"
                 value={scope}
@@ -491,6 +690,15 @@ function Workbench() {
               <p>
                 节点 {graph.nodes.length} · 关系 {graph.edges.length}
               </p>
+              {viewMode === "logical" && analysisMeta && (
+                <p className="analysis-meta">
+                  MiMo · {analysisMeta.model}
+                  <br />
+                  分析文件 {analysisMeta.analyzed_files} · 未分析文件按目录聚合
+                  <br />
+                  {analysisMeta.cache_hit ? "使用缓存结果" : "本次调用模型"}
+                </p>
+              )}
               <p>
                 STATIC_INFERRED：静态候选
                 <br />
@@ -539,7 +747,8 @@ function Workbench() {
               >
                 添加拟议节点
               </button>
-              <button onClick={layout}>布局 / 适应画布</button>
+                <button onClick={layout}>布局 / 适应画布</button>
+              </section>
             </aside>
             <section className="canvas" aria-label="项目蓝图">
               {mode === "Diff" ? (
@@ -601,6 +810,15 @@ function Workbench() {
             </section>
             <aside className="inspector">
               <h3>Inspector</h3>
+              {selectedPath && (
+                <div className="selected-source">
+                  <div className="source-heading">
+                    <span>当前文件</span>
+                    <small>{selectedPath}</small>
+                  </div>
+                  {source && <pre className="source-preview">{source}</pre>}
+                </div>
+              )}
               {current ? (
                 <>
                   <strong>{current.label}</strong>
@@ -616,7 +834,6 @@ function Workbench() {
                       {p.path}:{p.line} · {p.status}
                     </button>
                   ))}
-                  {source && <pre>{source}</pre>}
                   <label>
                     端口（JSON）
                     <textarea
@@ -688,7 +905,7 @@ function Workbench() {
                   </button>
                 </>
               ) : (
-                <p>选择节点查看端口、合同和源码证据。双击模块可展开函数。</p>
+                <p>选择蓝图节点查看功能、端口和源码证据。点击左侧文件可查看真实文件内容；双击节点可展开下级。</p>
               )}
               <label>
                 新增 / 重连关系

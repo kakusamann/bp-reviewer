@@ -1,5 +1,6 @@
 """Loopback API with independent access token and explicit filesystem allowlist."""
 
+import json
 import secrets
 from pathlib import Path
 from urllib.parse import urlparse
@@ -8,10 +9,10 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
+from .agent import AgentConfigurationError, AgentExecutionError, build_semantic_blueprint
 from .models import Graph, Manifest, Model
 from .review import change_request, validate
-from .scanner import safe_file
-from .scanner import digest
+from .scanner import directory_tree, digest, is_previewable, safe_file
 from .service import Store
 
 
@@ -85,26 +86,54 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
     def draft(key: str):
         return store.draft(key)
 
-    @app.get("/api/snapshots/{key}/source")
-    def source(key: str, path: str, line: int = 1):
-        import json
-
-        snapshot = store.snapshot(key)
-        evidence = [p for n in snapshot.graph.nodes for p in n.evidence if p.path == path]
-        if not evidence:
-            raise HTTPException(403, "Only indexed evidence can be viewed")
-        root = Path(json.loads(store.path("sources", key).read_text(encoding="utf-8"))["root"]).resolve()
+    def project_root(key: str) -> Path:
+        store.snapshot(key)
+        source_path = store.path("sources", key)
+        root = Path(json.loads(source_path.read_text(encoding="utf-8"))["root"]).resolve(strict=True)
         if not any(root.is_relative_to(allowed) for allowed in store.roots):
             raise HTTPException(403, "Project is no longer allowed")
+        if not root.is_dir():
+            raise HTTPException(404, "Project directory unavailable")
+        return root
+
+    @app.post("/api/snapshots/{key}/semantic-blueprint")
+    def semantic_blueprint(key: str, force_refresh: bool = False):
+        snapshot = store.snapshot(key)
+        root = project_root(key)
+        try:
+            return build_semantic_blueprint(root, snapshot, store.state, force_refresh=force_refresh)
+        except AgentConfigurationError as error:
+            raise HTTPException(503, str(error)) from error
+        except AgentExecutionError as error:
+            raise HTTPException(502, str(error)) from error
+
+    @app.get("/api/snapshots/{key}/tree")
+    def tree(key: str):
+        return directory_tree(project_root(key))
+
+    @app.get("/api/snapshots/{key}/source")
+    def source(key: str, path: str, line: int = 1):
+        snapshot = store.snapshot(key)
+        root = project_root(key)
+        normalized_parts = path.replace("\\", "/").split("/")
+        if path.startswith(("/", "\\")) or any(part == ".." for part in normalized_parts):
+            raise HTTPException(403, "File path not allowed")
         file = safe_file(root, path)
-        if file.stat().st_size > 1_000_000:
+        size = file.stat().st_size
+        if not is_previewable(path, size):
+            raise HTTPException(415, "File preview disabled for sensitive, binary, or oversized files")
+        if size > 1_000_000:
             raise ValueError("Source exceeds size limit")
         raw = file.read_bytes()
+        evidence = [p for n in snapshot.graph.nodes for p in n.evidence if p.path == path]
         first = max(1, line - 5)
+        known_hashes = [p.sha256 for p in evidence if p.sha256]
+        stale = bool(known_hashes) and not any(value == digest(raw) for value in known_hashes)
         return {
             "path": path,
             "first_line": first,
-            "stale": digest(raw) != evidence[0].sha256,
+            "stale": stale,
+            "indexed": bool(evidence),
             "content": "\n".join(raw.decode("utf-8", errors="replace").splitlines()[first - 1 : first + 79]),
         }
 
