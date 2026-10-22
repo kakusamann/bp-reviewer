@@ -104,13 +104,20 @@ def _source_facts(root: Path, path: str) -> dict[str, Any]:
             class_name = node.name
             if any(token in class_name.lower() for token in ("model", "network", "encoder", "classifier")):
                 facts["models"].append(
-                    {
-                        "name": class_name,
-                        "source": "class",
-                        "path": path,
-                        "line": node.lineno,
-                    }
+                    {"name": class_name, "source": "class", "path": path, "line": node.lineno}
                 )
+            declared = [ast.unparse(base) for base in node.bases]
+            decorators = [ast.unparse(decorator) for decorator in node.decorator_list]
+            is_contract = (
+                any(token in class_name.lower() for token in ("record", "schema", "contract", "request", "response"))
+                or any(token in base for base in declared for token in ("BaseModel", "TypedDict"))
+                or any("dataclass" in decorator for decorator in decorators)
+            )
+            if is_contract:
+                contract = {"name": class_name, "path": path, "line": node.lineno,
+                            "basis": "实际数据契约类型定义"}
+                facts["stages"].append({**contract, "stage": "input"})
+                facts.setdefault("contracts", []).append(contract)
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             target = (
                 node.targets[0]
@@ -219,6 +226,7 @@ def _steps_for_module(root: Path, paths: list[str]) -> tuple[dict[str, Any], lis
             continue
         profile["models"].extend(facts["models"])
         profile["parameters"].extend(facts["parameters"])
+        profile["inputs"].extend(facts.get("contracts", []))
         for fact in facts["stages"]:
             stages[fact["stage"]].append(fact)
         for artifact in facts["artifacts"]:
