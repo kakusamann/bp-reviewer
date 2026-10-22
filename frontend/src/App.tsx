@@ -70,6 +70,17 @@ function ProfileInspector({ node, openEvidence }: {
 }) {
   const [tab, setTab] = useState<"overview" | "parameters" | "results" | "evidence">("overview");
   const profile = getAnalysisProfile(node);
+  const modelChoices = [...new Set((profile?.models || []).map((item) => item.name).filter((name): name is string => Boolean(name)))];
+  const configuredModel = profile?.parameters?.find((item) =>
+    item.source === "配置文件" && (item.name === "model" || item.name?.endsWith(".model"))
+  );
+  const configParams = (profile?.parameters || []).filter((item) => item.source === "配置文件" && Boolean(item.name));
+  const [draftModel, setDraftModel] = useState(String(configuredModel?.value ?? ""));
+  const [draftValues, setDraftValues] = useState<Record<string, string>>({});
+  const [draftStatus, setDraftStatus] = useState("");
+  const draftChanges = configParams.filter((item) =>
+    item.name && draftValues[item.name] !== undefined && draftValues[item.name] !== String(item.value ?? "")
+  );
   const field = (items: ProfileEntry[] | undefined, empty: string, valueText = false) => {
     if (!items?.length) return <p className="profile-empty">{empty}</p>;
     return <div className="profile-entries">{items.slice(0, 25).map((item, i) => (
@@ -117,6 +128,56 @@ function ProfileInspector({ node, openEvidence }: {
       <p className="profile-note">识别到模型实现 ≠ 已运行该模型。仅呈现可追溯的配置与声明，不在本页面修改目标项目。</p>
       <h4>关键参数与配置</h4>
       {field(profile?.parameters, "未定位到可靠配置；一般变量不会自动当作可调整的实验超参数。", true)}
+      {configParams.length > 0 && <div className="profile-draft">
+        <h4>实验配置草案</h4>
+        <p className="profile-note">仅生成拟议变更，不修改、执行或训练原项目。当前值来自已定位的配置文件。</p>
+        {modelChoices.length > 0 && <label>
+          模型选择（配置值：{String(configuredModel?.value ?? "未定位")}）
+          <select aria-label="拟议模型选择" value={draftModel} onChange={(e) => setDraftModel(e.target.value)}>
+            <option value="">不指定</option>
+            {modelChoices.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>}
+        {configParams.filter((item) =>
+          item.name !== "model" && !item.name?.endsWith(".model")
+        ).slice(0, 16).map((item) => (
+          <label key={item.name} className="profile-draft-row">
+            <span>{item.name} <small>当前：{String(item.value)}</small></span>
+            <input type="text" value={draftValues[item.name || ""] ?? String(item.value ?? "")}
+              onChange={(e) => setDraftValues((prior) => ({ ...prior, [item.name || ""]: e.target.value }))} />
+          </label>
+        ))}
+        <button type="button" onClick={() => {
+          const draft = {
+            readonly_proposal: true, module: node.label,
+            model_selection: draftModel || null,
+            changes: draftChanges.map((item) => ({
+              name: item.name, before: item.value, after: draftValues[item.name || ""],
+              source: item.path, line: item.line,
+            })),
+          };
+          const content = JSON.stringify(draft, null, 2);
+          if (navigator.clipboard?.writeText) {
+            void navigator.clipboard.writeText(content).then(
+              () => setDraftStatus("配置草案已复制，可交给 Claude Code 审核后生成修改。"),
+              () => setDraftStatus("复制受限，请检查浏览器剪贴板权限。"),
+            );
+          } else {
+            setDraftStatus("浏览器不支持自动复制，请使用下方预览内容。");
+          }
+          setDraftStatus("已生成只读配置变更建议，未修改目标项目。");
+        }}>生成并复制配置调整建议</button>
+        {draftStatus && <p className="profile-note" role="status">{draftStatus}</p>}
+        <details><summary>查看变更草案（仅当前页面）</summary>
+          <pre>{JSON.stringify({
+            model_selection: draftModel || null,
+            changes: draftChanges.map((item) => ({
+              name: item.name, before: item.value,
+              after: draftValues[item.name || ""], source: item.path,
+            })),
+          }, null, 2)}</pre>
+        </details>
+      </div>}
     </>}
     {tab === "results" && <>
       <h4>实验／执行记录</h4>
