@@ -71,8 +71,7 @@ def hierarchical_projection(
 
     # Determine each semantic submodule's parent from actual member-file evidence.
     semantic_ids = {
-        node.id for node in retained
-        if node.kind == "logical_module" and node.id.startswith("agent:module:")
+        node.id for node in retained if node.kind == "logical_module" and node.id.startswith("agent:module:")
     }
     module_files: dict[str, list[str]] = {}
     for node in retained:
