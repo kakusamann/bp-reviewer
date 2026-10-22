@@ -24,7 +24,7 @@ from .scanner import directory_tree, safe_file
 from .structure import domain_for_path, project_catalog
 
 
-PROMPT_VERSION = "semantic-blueprint-v2-hierarchical"
+PROMPT_VERSION = "semantic-blueprint-v3-recursive-scoped"
 CORE_TERMS = {
     "main",
     "app",
@@ -115,6 +115,7 @@ class BlueprintState(TypedDict, total=False):
     candidates: list[dict[str, Any]]
     catalog: list[dict[str, Any]]
     domain_labels: dict[str, dict[str, str]]
+    scope_paths: list[str] | None
     summaries: list[dict[str, Any]]
     proposal: dict[str, Any]
     result: dict[str, Any]
@@ -252,7 +253,12 @@ def _index_project(state: BlueprintState) -> dict[str, Any]:
     root = Path(state["root"]).resolve(strict=True)
     snapshot = Snapshot.model_validate(state["snapshot"])
     tree = directory_tree(root, max_entries=10000, max_depth=16)
-    catalog = project_catalog(snapshot, tree["entries"])
+    scope_paths = state.get("scope_paths")
+    entries = tree["entries"]
+    if scope_paths is not None:
+        allowed_paths = set(scope_paths)
+        entries = [entry for entry in entries if entry["kind"] == "file" and entry["path"] in allowed_paths]
+    catalog = project_catalog(snapshot, entries)
     warnings = []
     if tree["truncated"]:
         warnings.append("项目索引达到条目或深度上限；未索引的文件仍可在目录树中查看。")
@@ -632,6 +638,7 @@ def _build_graph(
     state_warnings: list[str],
     catalog: list[dict[str, Any]] | None = None,
     domain_labels: dict[str, dict[str, str]] | None = None,
+    scope_paths: list[str] | None = None,
 ) -> tuple[Graph, int, dict[str, Any]]:
     used_ids = {node.id for node in snapshot.graph.nodes}
     warnings: list[str] = []
@@ -870,6 +877,9 @@ def _build_graph(
 
     # Index real structured-data artifacts locally. Their contents are never sent to MiMo.
     tree = directory_tree(root, max_entries=10000, max_depth=16)
+    if scope_paths is not None:
+        allowed_paths = set(scope_paths)
+        tree["entries"] = [entry for entry in tree["entries"] if entry["path"] in allowed_paths]
     artifact_entries = [
         entry
         for entry in tree["entries"]
@@ -1040,6 +1050,7 @@ def _validate_and_build(state: BlueprintState) -> dict[str, Any]:
         state.get("warnings", []),
         catalog=state["catalog"],
         domain_labels=state.get("domain_labels", {}),
+        scope_paths=state.get("scope_paths"),
     )
     return {"result": {"graph": graph.model_dump(), "metadata": metadata}}
 
@@ -1074,11 +1085,19 @@ def _workflow():
 
 
 def build_semantic_blueprint(
-    root: Path, snapshot: Snapshot, state_dir: Path, force_refresh: bool = False
+    root: Path,
+    snapshot: Snapshot,
+    state_dir: Path,
+    force_refresh: bool = False,
+    scope_paths: list[str] | None = None,
+    recursive: bool = True,
 ) -> dict[str, Any]:
-    """Build a cached logical blueprint from a bounded set of source excerpts."""
+    """Build a cached logical blueprint, optionally restricted to a subtree's files."""
     model = os.environ.get("MIMO_MODEL", "mimo-v2.5-pro").strip()
-    cache_key = hashlib.sha256(f"{snapshot.id}|{model}|{PROMPT_VERSION}".encode("utf-8")).hexdigest()
+    scope_digest = hashlib.sha256("\\n".join(sorted(set(scope_paths or []))).encode("utf-8")).hexdigest()[:16]
+    cache_key = hashlib.sha256(
+        f"{snapshot.id}|{model}|{PROMPT_VERSION}|{scope_digest}".encode("utf-8")
+    ).hexdigest()
     cache_path = state_dir / "semantic-blueprints" / f"{cache_key}.json"
     if cache_path.exists() and not force_refresh:
         try:
@@ -1096,7 +1115,50 @@ def build_semantic_blueprint(
         "snapshot": snapshot.model_dump(),
         "cache_path": str(cache_path),
         "cache_key": cache_key,
+        "scope_paths": sorted(set(scope_paths)) if scope_paths is not None else None,
         "warnings": [],
     }
-    result = _workflow().invoke(initial)
-    return result["result"]
+    result = _workflow().invoke(initial)["result"]
+    if recursive and scope_paths is None:
+        graph = Graph.model_validate(result["graph"])
+        domain_nodes = [
+            node for node in graph.nodes
+            if node.kind == "logical_module"
+            and not node.parent
+            and node.parameters.get("structural_group") is True
+            and node.label != "工程与辅助资源"
+        ]
+        max_domains = max(0, min(int(os.environ.get("MIMO_MAX_RECURSIVE_DOMAINS", "12")), 40))
+        eligible = []
+        for node in domain_nodes:
+            try:
+                paths = _scope_paths_for_node(root, snapshot, graph, node.id)
+            except AgentExecutionError:
+                continue
+            if sum(1 for path in paths if Path(path).suffix.lower() == ".py") >= 2:
+                eligible.append(node.id)
+        completed = 0
+        recursion_warnings = []
+        for scope_id in eligible[:max_domains]:
+            try:
+                refreshed = rebuild_semantic_blueprint_scope(
+                    root, snapshot, graph, scope_id, state_dir, force_refresh=force_refresh
+                )
+                graph = Graph.model_validate(refreshed["graph"])
+                completed += 1
+            except (AgentExecutionError, AgentConfigurationError, ValueError) as error:
+                recursion_warnings.append(f"未能递归整理功能域 {scope_id}：{str(error)[:180]}")
+        metadata = result.setdefault("metadata", {})
+        metadata["recursive_domains_built"] = completed
+        metadata["recursive_domains_total"] = len(eligible)
+        if len(eligible) > max_domains:
+            recursion_warnings.append(
+                f"递归功能域达到安全预算上限 {max_domains}；其余功能域仍可通过局部重建继续分析。"
+            )
+        metadata["warnings"] = list(dict.fromkeys([*metadata.get("warnings", []), *recursion_warnings]))
+        result["graph"] = graph.model_dump()
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(cache_path)
+    return result
