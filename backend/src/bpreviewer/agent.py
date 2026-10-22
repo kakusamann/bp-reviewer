@@ -995,11 +995,11 @@ def _build_graph(
         warnings.append(f"已合并 {duplicate_edges} 条重复逻辑关系，并保留各自的源码证据。")
     try:
         full_catalog = catalog if catalog is not None else project_catalog(snapshot, tree["entries"])
-    new_nodes, new_edges, hierarchy_info = hierarchical_projection(
-        root, new_nodes, new_edges, full_catalog, domain_labels or {}, tree["entries"],
-    )
-    graph = Graph(nodes=new_nodes, edges=new_edges)
-    except ValidationError as error:
+        new_nodes, new_edges, hierarchy_info = hierarchical_projection(
+            root, new_nodes, new_edges, full_catalog, domain_labels or {}, tree["entries"],
+        )
+        graph = Graph(nodes=new_nodes, edges=new_edges)
+    except (ValidationError, ValueError) as error:
         raise AgentExecutionError(f"逻辑蓝图结构校验失败：{error}") from error
     metadata = {
         "model": os.environ.get("MIMO_MODEL", "mimo-v2.5-pro"),
