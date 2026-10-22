@@ -1010,7 +1010,7 @@ function Workbench() {
                     setEdgeId("");
                   }}
                   onNodeDoubleClick={(_, node) => {
-                    if (node.data.item.kind === "logical_module") {
+                    if (graph.nodes.some((item) => item.id === node.id && item.kind === "logical_module")) {
                       setScope(node.id);
                       setQuery("");
                       setSelected("");
