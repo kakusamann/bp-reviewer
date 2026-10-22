@@ -459,3 +459,17 @@ aside label select { margin-top: 6px; }
 .developer-details summary { cursor: pointer; font-size: 11px; color: var(--muted-strong); }
 .developer-details pre { max-height: 250px; overflow: auto; font-size: 10px; word-break: break-word; }
 :root[data-theme="dark"] .profile-entry strong { color: #f1f5ff; }
+
+/* Experiment what-if controls: never write to the inspected source tree. */
+.profile-draft { margin-top: 14px; border: 1px solid var(--border-strong);
+  background: var(--surface-subtle); border-radius: 10px; padding: 12px; }
+.profile-draft h4 { margin-top: 0; }
+.profile-draft label { display: flex; flex-direction: column; gap: 5px; margin-top: 8px;
+  font-size: 11px; color: var(--ink); }
+.profile-draft label small { font-size: 10px; color: var(--muted); }
+.profile-draft input, .profile-draft select { width: 100%; box-sizing: border-box;
+  min-height: 32px; padding: 6px 8px; background: var(--surface);
+  color: var(--ink); border: 1px solid var(--border-strong); border-radius: 6px; }
+.profile-draft button { margin-top: 12px; }
+.profile-draft details { margin-top: 8px; font-size: 11px; }
+.profile-draft pre { padding: 8px; max-height: 220px; overflow: auto; font-size: 10px; }
