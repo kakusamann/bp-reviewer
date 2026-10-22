@@ -473,7 +473,7 @@ def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
         "project_areas": [
             {"key": area["key"], "name": state.get("domain_labels", {}).get(area["key"], {}).get("label", area["label"]),
              "sample_paths": area["sample_paths"][:4]}
-            for area in state["catalog"][:40]
+            for area in state.get("catalog", [])[:40]
         ],
         "files": [
             {
