@@ -19,6 +19,7 @@ from openai import OpenAI
 from pydantic import ValidationError
 
 from .models import Edge, Evidence, Graph, Node, Port, Snapshot
+from .hierarchy import hierarchical_projection
 from .scanner import directory_tree, safe_file
 from .structure import domain_for_path, project_catalog
 
@@ -620,7 +621,9 @@ def _file_io_calls(source: str) -> list[tuple[str, str, int]]:
 
 
 def _build_graph(
-    root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]], proposal: dict[str, Any], state_warnings: list[str]
+    root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]], proposal: dict[str, Any],
+    state_warnings: list[str], catalog: list[dict[str, Any]] | None = None,
+    domain_labels: dict[str, dict[str, str]] | None = None,
 ) -> tuple[Graph, int, dict[str, Any]]:
     used_ids = {node.id for node in snapshot.graph.nodes}
     warnings: list[str] = []
@@ -991,16 +994,22 @@ def _build_graph(
     if duplicate_edges:
         warnings.append(f"已合并 {duplicate_edges} 条重复逻辑关系，并保留各自的源码证据。")
     try:
-        graph = Graph(nodes=new_nodes, edges=new_edges)
+        full_catalog = catalog if catalog is not None else project_catalog(snapshot, tree["entries"])
+    new_nodes, new_edges, hierarchy_info = hierarchical_projection(
+        root, new_nodes, new_edges, full_catalog, domain_labels or {}, tree["entries"],
+    )
+    graph = Graph(nodes=new_nodes, edges=new_edges)
     except ValidationError as error:
         raise AgentExecutionError(f"逻辑蓝图结构校验失败：{error}") from error
     metadata = {
         "model": os.environ.get("MIMO_MODEL", "mimo-v2.5-pro"),
         "analyzed_files": len(summaries),
         "candidate_files": [item["path"] for item in summaries],
-        "logical_modules": len(modules) + 1,
+        "logical_modules": hierarchy_info["domain_count"] + len(proposal["modules"]),
+        "project_domains": hierarchy_info["domain_count"],
+        "hierarchy": hierarchy_info,
         "data_artifacts": len(artifact_entries),
-        "unreviewed_files": sum(1 for module in modules if module["key"].startswith("unreviewed_")),
+        "unreviewed_files": len(file_nodes) - len(assigned),
         "cache_hit": False,
         "warnings": list(dict.fromkeys([*state_warnings, *warnings])),
     }
@@ -1010,7 +1019,10 @@ def _build_graph(
 def _validate_and_build(state: BlueprintState) -> dict[str, Any]:
     root = Path(state["root"]).resolve(strict=True)
     snapshot = Snapshot.model_validate(state["snapshot"])
-    graph, _, metadata = _build_graph(root, snapshot, state["summaries"], state["proposal"], state.get("warnings", []))
+    graph, _, metadata = _build_graph(
+        root, snapshot, state["summaries"], state["proposal"], state.get("warnings", []),
+        catalog=state["catalog"], domain_labels=state.get("domain_labels", {}),
+    )
     return {"result": {"graph": graph.model_dump(), "metadata": metadata}}
 
 
