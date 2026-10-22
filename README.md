@@ -4,21 +4,56 @@ Blueprint-based Project Reviewer：只读分析本地 Python 项目，以证据�
 
 适用于普通 Python 项目与科研代码库。React Flow 画布展示模块、顶层函数、静态导入/调用、中文端口说明和源码证据；可选 manifest 声明自动扫描无法确认的数据流。可展开模块、缩放、选择节点、检查类型/合同和源码哈希。
 
-独立工具；不运行目标代码、不训练模型、不自动修改目标源码。静态扫描无法完整还原运行数据流，详情见 [manifest 与证据边界](docs/manifest.md)。代码托管于用户指定的私有仓库；迁移实现位于 `refactor/split-bp-reviewer`，`main` 保留最小引导提交作为后续审阅基线。许可证评估见 [docs/licensing.md](docs/licensing.md)。
+独立工具；不运行目标代码、不训练模型、不自动修改目标源码。静态扫描无法完整还原运行数据流，详情见 [manifest 与证据边界](docs/manifest.md)。代码托管于用户指定的私有仓库，当前实现位于 `main` 分支。许可证评估见 [docs/licensing.md](docs/licensing.md)。
 
 ## Install and start
 
-Windows PowerShell + Conda，独立环境名 `bpreviewer`。Node `24.15.0`、npm `11.16.0`，不要求科研环境。
+Windows PowerShell + Conda，独立环境名 `bpreviewer`。Node `24.15.0`、npm `11.16.0`，不要求科研环境。仅用于本机开发和只读扫描，不是公网部署。
+
+先准备环境（仅首次）：
 
 ```powershell
-git clone --branch refactor/split-bp-reviewer https://github.com/kakusamann/bp-reviewer.git
+git clone https://github.com/kakusamann/bp-reviewer.git
 cd bp-reviewer
 conda env create -f environment.yml
-conda activate bpreviewer
-python -m bpreviewer.cli --allow-root ./examples/tiny_pipeline --allow-root ../AstroLCA
 ```
 
-将终端输出的本地令牌输入页面。可用环境变量 `BPREVIEWER_TOKEN` 指定令牌；不要提交令牌。每次自动生成的令牌仅在当前进程有效。`--allow-root` 可重复，只允许读取显式授权目录；状态默认在当前目录 `state/`，可通过 `--state` 改到其他独立目录，不能设在目标项目中。服务固定绑定 loopback 的 8011 端口。
+### 一键启动（Windows 本地）
+
+在仓库根目录执行：
+
+```powershell
+.\start.ps1
+```
+
+若执行策略阻止本地脚本，改用仅对本次进程生效的命令：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+默认扫描同级目录 `..\AstroLCA` 与合成示例 `examples/tiny_pipeline/`。指定其他目标目录：
+
+```powershell
+.\start.ps1 -ProjectPath "D:\path\to\AstroLCA"
+```
+
+可选参数：`-NoBrowser` 不自动打开浏览器；`-ReinstallFrontendDependencies` 强制在 `frontend/` 重装依赖（默认仅当 `frontend/node_modules` 不存在时执行 `npm ci`）。脚本会校验 `bpreviewer` 环境、Node/npm 版本、目标目录和端口后，分别在独立终端窗口启动后端与前端；状态只写入仓库内的 `state/`，绝不写入被扫描项目。
+
+- 页面地址：`http://127.0.0.1:5174`（前端仅绑定回环地址）。
+- 后端地址：`http://127.0.0.1:8011`；本地访问令牌由后端运行时生成，显示在后端终端窗口中，在页面连接服务后输入该令牌。可用环境变量 `BPREVIEWER_TOKEN` 指定令牌；不要提交令牌。每次自动生成的令牌仅在当前进程有效。
+- 停止服务：在仓库根目录执行 `.\stop.ps1`（只停止由 start.ps1 启动并核验过的进程），或在后端、前端各自的终端窗口按 Ctrl+C。
+
+`start.bat` 是双击入口，仅调用 `start.ps1`。
+
+### 手动分步启动（可选）
+
+```powershell
+conda activate bpreviewer
+python -m bpreviewer.cli --allow-root ./examples/tiny_pipeline --allow-root ../AstroLCA --state .\state --port 8011
+```
+
+将终端输出的本地令牌输入页面。`--allow-root` 可重复，只允许读取显式授权目录；状态通过 `--state` 指向独立目录，不能设在目标项目中。服务固定绑定 loopback 的 8011 端口。
 
 另开终端（前端无需激活科研环境）：
 

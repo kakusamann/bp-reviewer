@@ -1,0 +1,11 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.xiaomimimo.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "sk-cys8j4lw6uol48lumb5gufqtqsm7iz5w91nd2lluf998k1rb",
+    "ANTHROPIC_MODEL": "mimo-v2.6-pro",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "mimo-v2.6-pro",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "mimo-v2.6-pro",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "mimo-v2.6-pro",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "mimo-v2.6-flash"
+  }
+}
