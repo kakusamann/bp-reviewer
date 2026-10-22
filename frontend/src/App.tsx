@@ -563,6 +563,7 @@ function Workbench() {
                 </div>
               ) : (
                 <ReactFlow
+                  colorMode="dark"
                   nodes={nodes}
                   edges={edges}
                   nodeTypes={nodeTypes}
