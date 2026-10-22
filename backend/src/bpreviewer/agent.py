@@ -20,9 +20,10 @@ from pydantic import ValidationError
 
 from .models import Edge, Evidence, Graph, Node, Port, Snapshot
 from .scanner import directory_tree, safe_file
+from .structure import domain_for_path, project_catalog
 
 
-PROMPT_VERSION = "semantic-blueprint-v1"
+PROMPT_VERSION = "semantic-blueprint-v2-hierarchical"
 CORE_TERMS = {
     "main",
     "app",
@@ -111,6 +112,8 @@ class BlueprintState(TypedDict, total=False):
     cache_path: str
     cache_key: str
     candidates: list[dict[str, Any]]
+    catalog: list[dict[str, Any]]
+    domain_labels: dict[str, dict[str, str]]
     summaries: list[dict[str, Any]]
     proposal: dict[str, Any]
     result: dict[str, Any]
@@ -243,6 +246,57 @@ def _extract_static_facts(source: str) -> dict[str, Any]:
     }
 
 
+def _index_project(state: BlueprintState) -> dict[str, Any]:
+    """Whole-project structure without a model call or execution of target code."""
+    root = Path(state["root"]).resolve(strict=True)
+    snapshot = Snapshot.model_validate(state["snapshot"])
+    tree = directory_tree(root, max_entries=10000, max_depth=16)
+    catalog = project_catalog(snapshot, tree["entries"])
+    warnings = []
+    if tree["truncated"]:
+        warnings.append("项目索引达到条目或深度上限；未索引的文件仍可在目录树中查看。")
+    return {"catalog": catalog, "warnings": warnings}
+
+
+def _label_domains(state: BlueprintState) -> dict[str, Any]:
+    """One compact MiMo call labels structural areas without uploading source contents."""
+    catalog = state["catalog"]
+    # Keep a bounded overview; everything beyond this limit retains its deterministic label.
+    payload = {"areas": [
+        {"key": group["key"], "fallback_label": group["label"],
+         "count": group["count"], "sample_paths": group["sample_paths"][:6],
+         "sample_symbols": group["sample_symbols"][:8]}
+        for group in catalog[:40]
+    ]}
+    if not payload["areas"]:
+        return {"domain_labels": {}}
+    result = _call_mimo(
+        "你是项目架构分析器。基于目录结构、文件名和静态符号为现有功能域命名，"
+        "不要臆造代码行为。不得新增、删改 key。优先使用明确的业务功能名称，"
+        "不要简单重复文件路径，也不要把代码文件逐个作为模块。"
+        "返回严格 JSON：{\\\"areas\\\":[{\\\"key\\\":string,\\\"label\\\":string,"
+        "\\\"description\\\":string}]}。label 使用简短中文（不超过 16 字），"
+        "description 不超过 60 汉字，不确定时沿用 fallback_label。",
+        payload,
+        max_tokens=2000,
+    )
+    raw = result.get("areas", [])
+    valid = {area["key"] for area in payload["areas"]}
+    labels = {}
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict) or item.get("key") not in valid:
+                continue
+            key = item["key"]
+            label = str(item.get("label") or "").strip()[:40]
+            if label:
+                labels[key] = {
+                    "label": label,
+                    "description": str(item.get("description") or "")[:200],
+                }
+    return {"domain_labels": labels}
+
+
 def _select_candidates(state: BlueprintState) -> dict[str, Any]:
     root = Path(state["root"]).resolve(strict=True)
     snapshot = Snapshot.model_validate(state["snapshot"])
@@ -274,7 +328,24 @@ def _select_candidates(state: BlueprintState) -> dict[str, Any]:
     total_budget = max(8000, min(int(os.environ.get("MIMO_MAX_TOTAL_CHARS", "22000")), 32000))
     candidates = []
     used_chars = 0
-    for score, relative, node in scored:
+    # Stratify by the catalog to avoid high-degree API files monopolizing the budget.
+    pools: dict[str, list[tuple[float, str, Node]]] = {}
+    for scored_item in scored:
+        key = domain_for_path(scored_item[1])
+        pools.setdefault(key, []).append(scored_item)
+    prioritized_keys = [
+        group["key"] for group in state["catalog"]
+        if not group["is_support"] and group["key"] in pools
+    ]
+    prioritized_keys += [
+        key for key in pools if key not in prioritized_keys
+    ]
+    ordered = []
+    while any(pools.values()):
+        for key in prioritized_keys:
+            if pools.get(key):
+                ordered.append(pools[key].pop(0))
+    for score, relative, node in ordered:
         if len(candidates) >= max_files or used_chars >= total_budget:
             break
         try:
@@ -398,6 +469,11 @@ def _summarize_candidates(state: BlueprintState) -> dict[str, Any]:
 
 def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
     payload = {
+        "project_areas": [
+            {"key": area["key"], "name": state.get("domain_labels", {}).get(area["key"], {}).get("label", area["label"]),
+             "sample_paths": area["sample_paths"][:4]}
+            for area in state["catalog"][:40]
+        ],
         "files": [
             {
                 "path": item["path"],
@@ -414,7 +490,8 @@ def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
     }
     system_prompt = (
         "你是软件架构师。请将输入中的已分析文件聚合为少量、职责清晰的逻辑功能模块。"
-        "不要按文件名机械分组；结合功能摘要、输入输出与操作判断。"
+        "不要按文件名机械分组；结合功能摘要、输入输出、项目功能域与操作判断。"
+        "这些是功能域下的子功能，不是全项目的完整功能清单。"
         "每个输入 path 必须恰好归属一个模块；不得创造输入中不存在的 path。"
         "只在有明确依据时提出模块间关系，关系只允许 data 或 control；不确定时不要创建关系。"
         "模块关系是候选推断，不是运行时事实。请用简体中文输出严格 JSON，不要 Markdown。"
@@ -475,20 +552,8 @@ def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
                 "confidence": max(0.0, min(1.0, confidence)),
             }
         )
-    for summary in state["summaries"]:
-        if summary["path"] not in seen_paths:
-            clean_modules.append(
-                {
-                    "key": _unique_id("unassigned_" + _slug(summary["path"]), used_module_keys),
-                    "name": "待归类：" + Path(summary["path"]).stem,
-                    "description": summary["summary"],
-                    "member_paths": [summary["path"]],
-                    "inputs": summary["inputs"],
-                    "outputs": summary["outputs"],
-                    "confidence": min(summary["confidence"], 0.3),
-                }
-            )
-            seen_paths.add(summary["path"])
+    # Unassigned files remain real evidence beneath their structural domain.
+    # Never promote one unclassified file to a separate top-level business module.
     valid_keys = {module["key"] for module in clean_modules}
     clean_edges = []
     edge_by_signature: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -960,12 +1025,16 @@ def _persist_result(state: BlueprintState) -> dict[str, Any]:
 
 def _workflow():
     builder = StateGraph(BlueprintState)
+    builder.add_node("index_project", _index_project)
+    builder.add_node("label_domains", _label_domains)
     builder.add_node("select_candidates", _select_candidates)
     builder.add_node("summarize_candidates", _summarize_candidates)
     builder.add_node("aggregate_modules", _aggregate_modules)
     builder.add_node("validate_and_build", _validate_and_build)
     builder.add_node("persist_result", _persist_result)
-    builder.add_edge(START, "select_candidates")
+    builder.add_edge(START, "index_project")
+    builder.add_edge("index_project", "label_domains")
+    builder.add_edge("label_domains", "select_candidates")
     builder.add_edge("select_candidates", "summarize_candidates")
     builder.add_edge("summarize_candidates", "aggregate_modules")
     builder.add_edge("aggregate_modules", "validate_and_build")
