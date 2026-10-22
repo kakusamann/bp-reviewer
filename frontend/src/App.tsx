@@ -204,7 +204,8 @@ function Workbench() {
       reconnectable: editable,
       markerEnd: { type: MarkerType.ArrowClosed },
       style: {
-        stroke: e.kind === "data" ? "#408e90" : "#74849a",
+        stroke: e.kind === "data" ? "#4ad4c0" : e.kind === "control" ? "#b4a1ff" : "#748ba9",
+        strokeWidth: 2,
         strokeDasharray: e.kind === "control" ? "6 4" : undefined,
       },
     }));
