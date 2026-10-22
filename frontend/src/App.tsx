@@ -392,7 +392,7 @@ function Workbench() {
         metadata: NonNullable<typeof analysisMeta>;
       }>(`/api/snapshots/${snapshot.id}/semantic-blueprint/rebuild`, {
         method: "POST",
-        body: JSON.stringify({ scope_node_id: scopeNodeId, graph: semanticGraph }),
+        body: JSON.stringify({ scope_node_id: scopeNodeId }),
       });
       setSemanticGraph(result.graph);
       setAnalysisMeta(result.metadata);
@@ -418,7 +418,7 @@ function Workbench() {
           metadata: NonNullable<typeof analysisMeta>;
         }>(`/api/snapshots/${snapshot.id}/semantic-blueprint/rebuild`, {
           method: "POST",
-          body: JSON.stringify({ scope_node_id: target.id, graph: semanticGraph }),
+          body: JSON.stringify({ scope_node_id: target.id }),
         });
         setSemanticGraph(result.graph);
         setAnalysisMeta(result.metadata);
