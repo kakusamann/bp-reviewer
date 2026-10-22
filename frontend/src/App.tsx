@@ -94,6 +94,7 @@ function Workbench() {
     model: string;
     analyzed_files: number;
     logical_modules: number;
+    project_domains?: number;
     data_artifacts: number;
     unreviewed_files: number;
     cache_hit: boolean;
@@ -107,6 +108,7 @@ function Workbench() {
     future: [],
   });
   const [scope, setScope] = useState("modules");
+  const [showDependencies, setShowDependencies] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState("");
   const [edgeId, setEdgeId] = useState("");
@@ -235,16 +237,38 @@ function Workbench() {
     }
     return treeEntries.filter((entry) => allowed.has(entry.path));
   }, [treeEntries, treeQuery, expandedDirs]);
-  const renderedNodes: Node[] = visible.map((n, i) => ({
-    id: n.id,
+  const diagramLinks = graph.edges.filter(
+    (edge) =>
+      visible.some((node) => node.id === edge.source) &&
+      visible.some((node) => node.id === edge.target) &&
+      (viewMode !== "logical" || showDependencies || ["data", "control"].includes(edge.kind)),
+  );
+  const renderedNodes: Node[] = visible.map((node, i) => ({
+    id: node.id,
     type: "project",
-    position:
-      n.position.x || n.position.y
-        ? n.position
-        : { x: (i % 3) * 360, y: Math.floor(i / 3) * 290 },
-    selected: n.id === selected,
-    data: { item: n, editable, choose: portClick },
+    position: node.position.x || node.position.y
+      ? node.position
+      : { x: (i % 3) * 360, y: Math.floor(i / 3) * 290 },
+    selected: node.id === selected,
+    data: { item: node, editable, choose: portClick },
   }));
+  if (viewMode === "logical" && mode === "As-is" && visible.length <= 200) {
+    const layoutGraph = new dagre.graphlib.Graph({ multigraph: false });
+    layoutGraph.setGraph({ rankdir: "LR", ranksep: 140, nodesep: 90, marginx: 50, marginy: 45 });
+    layoutGraph.setDefaultEdgeLabel(() => ({}));
+    visible.forEach((node) => layoutGraph.setNode(node.id, {
+      width: 290,
+      height: Math.max(115, 80 + node.ports.length * 42),
+    }));
+    diagramLinks.forEach((edge) => {
+      if (edge.source !== edge.target) layoutGraph.setEdge(edge.source, edge.target);
+    });
+    dagre.layout(layoutGraph);
+    renderedNodes.forEach((node) => {
+      const entry = layoutGraph.node(node.id);
+      if (entry) node.position = { x: entry.x - entry.width / 2, y: entry.y - entry.height / 2 };
+    });
+  }
   const [canvasNodes, setCanvasNodes] = useState<Node[]>([]);
   useEffect(() => {
     setCanvasNodes(renderedNodes);
@@ -253,7 +277,7 @@ function Workbench() {
   const moveNodes = (changes: NodeChange[]) =>
     setCanvasNodes((previous) => applyNodeChanges(changes, previous));
   const ids = new Set(visible.map((n) => n.id));
-  const edges = graph.edges
+  const edges = diagramLinks
     .filter((e) => ids.has(e.source) && ids.has(e.target))
     .map((e) => ({
       id: e.id,
@@ -539,7 +563,7 @@ function Workbench() {
                 setEdgeId("");
                 setQuery("");
                 const cacheNote = result.metadata.cache_hit ? "（命中缓存，未重新调用模型）" : "";
-                setInfo("逻辑蓝图已生成：" + result.metadata.analyzed_files + " 个核心文件、" + result.metadata.logical_modules + " 个逻辑模块、" + result.metadata.data_artifacts + " 个数据资产节点。" + cacheNote);
+                setInfo("逻辑蓝图已生成：" + result.metadata.analyzed_files + " 个深度分析文件、" + (result.metadata.project_domains ?? "若干") + " 个全项目功能域、" + result.metadata.data_artifacts + " 个数据资产节点。" + cacheNote);
               })}
             >
               AI 构建逻辑蓝图
@@ -681,6 +705,34 @@ function Workbench() {
               </section>
               <section className="blueprint-controls">
                 <h3>蓝图视图</h3>
+                {viewMode === "logical" && mode === "As-is" && (
+                  <div className="blueprint-navigation">
+                    <div className="blueprint-breadcrumb">
+                      <button type="button" onClick={() => setScope("modules")}>功能域总览</button>
+                      {scope !== "modules" && scope !== "all" && (() => {
+                        const parents: ProjectNode[] = [];
+                        let item = graph.nodes.find((node) => node.id === scope);
+                        const visited = new Set<string>();
+                        while (item && !visited.has(item.id)) {
+                          parents.unshift(item);
+                          visited.add(item.id);
+                          item = graph.nodes.find((node) => node.id === item?.parent);
+                        }
+                        return parents.map((node) => (
+                          <button type="button" key={node.id} onClick={() => setScope(node.id)} title={node.label}>
+                            / {node.label}
+                          </button>
+                        ));
+                      })()}
+                    </div>
+                    <label className="blueprint-toggle">
+                      <input type="checkbox" checked={showDependencies}
+                        onChange={(event) => setShowDependencies(event.target.checked)} />
+                      显示静态导入与归属连线
+                    </label>
+                    <p>双击节点查看下一级；默认仅展示数据流与控制流。</p>
+                  </div>
+                )}
                 <input
                   aria-label="搜索节点"
                   placeholder="搜索蓝图节点…"
@@ -692,7 +744,7 @@ function Workbench() {
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
               >
-                <option value="modules">模块概览</option>
+                <option value="modules">功能域概览</option>
                 <option value="all">全部节点</option>
                 {graph.nodes
                   .filter((n) => !n.parent)
@@ -709,7 +761,9 @@ function Workbench() {
                 <p className="analysis-meta">
                   MiMo · {analysisMeta.model}
                   <br />
-                  分析文件 {analysisMeta.analyzed_files} · 未分析文件按目录聚合
+                  深度分析 {analysisMeta.analyzed_files} 个文件 · 全项目分组 {analysisMeta.project_domains ?? "—"} 个功能域
+                  <br />
+                  未深度分析的文件保留为下层证据
                   <br />
                   {analysisMeta.cache_hit ? "使用缓存结果" : "本次调用模型"}
                 </p>
@@ -800,7 +854,9 @@ function Workbench() {
                     setSelected(n.id);
                     setEdgeId("");
                   }}
-                  onNodeDoubleClick={(_, n) => setScope(n.id)}
+                  onNodeDoubleClick={(_, node) => {
+                    if (graph.nodes.some((child) => child.parent === node.id)) setScope(node.id);
+                  }}
                   onEdgeClick={(_, e) => {
                     setEdgeId(e.id);
                     setSelected("");
