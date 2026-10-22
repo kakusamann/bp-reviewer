@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
+from .agent import AgentConfigurationError, AgentExecutionError, build_semantic_blueprint
 from .models import Graph, Manifest, Model
 from .review import change_request, validate
 from .scanner import directory_tree, digest, is_previewable, safe_file
@@ -94,6 +95,17 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
         if not root.is_dir():
             raise HTTPException(404, "Project directory unavailable")
         return root
+
+    @app.post("/api/snapshots/{key}/semantic-blueprint")
+    def semantic_blueprint(key: str, force_refresh: bool = False):
+        snapshot = store.snapshot(key)
+        root = project_root(key)
+        try:
+            return build_semantic_blueprint(root, snapshot, store.state, force_refresh=force_refresh)
+        except AgentConfigurationError as error:
+            raise HTTPException(503, str(error)) from error
+        except AgentExecutionError as error:
+            raise HTTPException(502, str(error)) from error
 
     @app.get("/api/snapshots/{key}/tree")
     def tree(key: str):
