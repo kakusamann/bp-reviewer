@@ -299,3 +299,7 @@ aside label select { margin-top: 6px; }
 @media (max-width: 1180px) {
   .tree-panel { max-height: 44%; }
 }
+
+.agent-action { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 2px 5px rgb(89 86 214 / 16%); }
+.agent-action:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.analysis-meta { padding: 9px 10px; border: 1px solid #e4e4fb; border-radius: 8px; background: #f5f5ff; color: #5a5899 !important; font-size: 10px !important; }

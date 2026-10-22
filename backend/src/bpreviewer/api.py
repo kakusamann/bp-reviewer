@@ -124,7 +124,8 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
         raw = file.read_bytes()
         evidence = [p for n in snapshot.graph.nodes for p in n.evidence if p.path == path]
         first = max(1, line - 5)
-        stale = bool(evidence) and not any(p.sha256 == digest(raw) for p in evidence)
+        known_hashes = [p.sha256 for p in evidence if p.sha256]
+        stale = bool(known_hashes) and not any(value == digest(raw) for value in known_hashes)
         return {
             "path": path,
             "first_line": first,

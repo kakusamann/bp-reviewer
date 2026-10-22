@@ -93,7 +93,8 @@ def directory_tree(root: Path, max_entries: int = 10000, max_depth: int = 16) ->
             and not (hasattr(directory / d, "is_junction") and (directory / d).is_junction())
             and (directory / d).resolve().is_relative_to(root)
         )
-        if depth >= max_depth:
+        depth_limited = depth >= max_depth
+        if depth_limited:
             if dirs:
                 truncated = True
             dirs[:] = []
@@ -107,7 +108,8 @@ def directory_tree(root: Path, max_entries: int = 10000, max_depth: int = 16) ->
                 "kind": "directory", "depth": depth, "size": None, "extension": "",
                 "previewable": False, "sensitive": False,
             })
-        if truncated and len(entries) >= max_entries:
+        if len(entries) >= max_entries:
+            truncated = True
             break
         for name in sorted(names, key=str.casefold):
             if len(entries) >= max_entries:
@@ -128,7 +130,8 @@ def directory_tree(root: Path, max_entries: int = 10000, max_depth: int = 16) ->
                 "kind": "file", "depth": depth, "size": size, "extension": rel_path.suffix.lower(),
                 "previewable": is_previewable(rel, size), "sensitive": is_sensitive_path(rel),
             })
-        if truncated:
+        if len(entries) >= max_entries:
+            truncated = True
             break
     entries.sort(key=lambda item: (
         item["parent"].casefold(),

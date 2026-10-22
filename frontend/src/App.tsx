@@ -83,6 +83,17 @@ function Workbench() {
   const [expandedDirs, setExpandedDirs] = useState<string[]>([]);
   const [selectedPath, setSelectedPath] = useState("");
   const [treeTruncated, setTreeTruncated] = useState(false);
+  const [semanticGraph, setSemanticGraph] = useState<Graph>();
+  const [viewMode, setViewMode] = useState<"static" | "logical">("static");
+  const [analysisMeta, setAnalysisMeta] = useState<{
+    model: string;
+    analyzed_files: number;
+    logical_modules: number;
+    data_artifacts: number;
+    unreviewed_files: number;
+    cache_hit: boolean;
+    warnings: string[];
+  }>();
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [mode, setMode] = useState<"As-is" | "Proposed" | "Diff">("As-is");
   const [history, dispatch] = useReducer(historyReducer, {
@@ -109,7 +120,10 @@ function Workbench() {
   const [paramsText, setParamsText] = useState("");
   const flow = useReactFlow();
   const editable = mode === "Proposed";
-  const graph = mode === "As-is" ? snapshot?.graph || empty : history.present;
+  const graph =
+    mode === "As-is"
+      ? (viewMode === "logical" && semanticGraph ? semanticGraph : snapshot?.graph || empty)
+      : history.present;
   const current = graph.nodes.find((n) => n.id === selected);
   const edit = (next: Graph) => {
     dispatch({ type: "edit", graph: next });
@@ -177,7 +191,21 @@ function Workbench() {
             : n.id === scope || n.parent === scope)) &&
         (!query || n.label.toLowerCase().includes(query.toLowerCase())),
     );
-    return primary;
+    const visibleIds = new Set(primary.map((node) => node.id));
+    if (scope !== "modules" && scope !== "all") {
+      const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+      for (const edge of graph.edges) {
+        const sourceInside = visibleIds.has(edge.source);
+        const targetInside = visibleIds.has(edge.target);
+        if (sourceInside === targetInside) continue;
+        const externalId = sourceInside ? edge.target : edge.source;
+        const external = nodeById.get(externalId);
+        if (external && ["logical_module", "data_artifact"].includes(external.kind)) {
+          visibleIds.add(externalId);
+        }
+      }
+    }
+    return graph.nodes.filter((node) => visibleIds.has(node.id));
   }, [graph, scope, query]);
   const visibleTreeEntries = useMemo(() => {
     if (!treeQuery.trim()) {
@@ -271,6 +299,9 @@ function Workbench() {
       setTreeQuery("");
       setSelectedPath("");
       setSource("");
+      setSemanticGraph(undefined);
+      setAnalysisMeta(undefined);
+      setViewMode("static");
       dispatch({ type: "reset", graph: saved.graph });
       setRevision(saved.revision);
       setMode("As-is");
@@ -343,7 +374,7 @@ function Workbench() {
     revealTreePath(entry.path);
     const evidenceNode = graph.nodes.find((node) => node.evidence.some((proof) => proof.path === entry.path));
     if (evidenceNode) {
-      setScope("all");
+      setScope(evidenceNode.parent || evidenceNode.id);
       setQuery("");
       setSelected(evidenceNode.id);
     }
@@ -442,11 +473,57 @@ function Workbench() {
               <button
                 className={mode === m ? "active" : ""}
                 key={m}
-                onClick={() => (m === "Diff" ? void review() : setMode(m))}
+                onClick={() => {
+                  if (m === "Diff") void review();
+                  else {
+                    setMode(m);
+                    if (m !== "As-is") setViewMode("static");
+                  }
+                }}
               >
                 {m}
               </button>
             ))}
+            {semanticGraph && mode === "As-is" && (
+              <>
+                <button
+                  className={viewMode === "static" ? "active" : ""}
+                  onClick={() => { setViewMode("static"); setSelected(""); setScope("modules"); }}
+                >
+                  静态证据
+                </button>
+                <button
+                  className={viewMode === "logical" ? "active" : ""}
+                  onClick={() => { setViewMode("logical"); setSelected(""); setScope("modules"); }}
+                >
+                  逻辑蓝图
+                </button>
+              </>
+            )}
+            <button
+              className="agent-action"
+              disabled={!snapshot || busy}
+              title="将少量核心 Python 代码片段发送到已配置的 MiMo API；不会上传完整项目或数据文件内容。"
+              onClick={() => void run(async () => {
+                if (!snapshot) return;
+                const result = await api<{ graph: Graph; metadata: NonNullable<typeof analysisMeta> }>(
+                  "/api/snapshots/" + snapshot.id + "/semantic-blueprint",
+                  { method: "POST" },
+                );
+                setSemanticGraph(result.graph);
+                setAnalysisMeta(result.metadata);
+                setMode("As-is");
+                setViewMode("logical");
+                setScope("modules");
+                setSelected("");
+                setEdgeId("");
+                setQuery("");
+                const cacheNote = result.metadata.cache_hit ? "（命中缓存，未重新调用模型）" : "";
+                setInfo("逻辑蓝图已生成：" + result.metadata.analyzed_files + " 个核心文件、" + result.metadata.logical_modules + " 个逻辑模块、" + result.metadata.data_artifacts + " 个数据资产节点。" + cacheNote);
+              })}
+            >
+              AI 构建逻辑蓝图
+            </button>
             <span>
               {snapshot.project_name} ·{" "}
               {snapshot.git_head?.slice(0, 10) || "无 Git HEAD"}
@@ -608,6 +685,15 @@ function Workbench() {
               <p>
                 节点 {graph.nodes.length} · 关系 {graph.edges.length}
               </p>
+              {viewMode === "logical" && analysisMeta && (
+                <p className="analysis-meta">
+                  MiMo · {analysisMeta.model}
+                  <br />
+                  分析文件 {analysisMeta.analyzed_files} · 未分析文件按目录聚合
+                  <br />
+                  {analysisMeta.cache_hit ? "使用缓存结果" : "本次调用模型"}
+                </p>
+              )}
               <p>
                 STATIC_INFERRED：静态候选
                 <br />
@@ -743,7 +829,6 @@ function Workbench() {
                       {p.path}:{p.line} · {p.status}
                     </button>
                   ))}
-                  {source && <pre>{source}</pre>}
                   <label>
                     端口（JSON）
                     <textarea
