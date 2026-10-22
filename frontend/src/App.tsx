@@ -418,16 +418,38 @@ function Workbench() {
       setReport(result);
       setMode("Diff");
     });
+  const executeBuildJob = async (scopeNodeId?: string) => {
+    if (!snapshot) throw new Error("请先扫描项目");
+    setShowBuildProgress(true);
+    setBuildProgress({ status: "queued", stage: "queued", detail: "创建构建任务",
+      completed_steps: 0, total_steps: 0 });
+    const started = await api<{ job_id: string }>(
+      `/api/snapshots/${snapshot.id}/semantic-blueprint/jobs`, {
+        method: "POST",
+        body: JSON.stringify({ scope_node_id: scopeNodeId || null, force_refresh: true }),
+      },
+    );
+    type JobInfo = {
+      status: string; stage: string; detail: string; completed_steps: number;
+      total_steps: number; error?: string;
+      result?: { graph: Graph; metadata: NonNullable<typeof analysisMeta> };
+    };
+    for (let attempt = 0; attempt < 3600; attempt++) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 750));
+      const job = await api<JobInfo>(
+        `/api/snapshots/${snapshot.id}/semantic-blueprint/jobs/${started.job_id}`,
+      );
+      setBuildProgress(job);
+      if (job.status === "completed" && job.result) return job.result;
+      if (job.status === "failed") throw new Error(job.error || "蓝图任务失败");
+    }
+    throw new Error("进度查询超时，后台任务可能仍在运行，请在后端日志中检查状态");
+  };
+
   const rebuildScope = (scopeNodeId: string, navigateAfter = true) =>
     run(async () => {
       if (!snapshot || !semanticGraph) return;
-      const result = await api<{
-        graph: Graph;
-        metadata: NonNullable<typeof analysisMeta>;
-      }>(`/api/snapshots/${snapshot.id}/semantic-blueprint/rebuild`, {
-        method: "POST",
-        body: JSON.stringify({ scope_node_id: scopeNodeId }),
-      });
+      const result = await executeBuildJob(scopeNodeId);
       setSemanticGraph(result.graph);
       setAnalysisMeta(result.metadata);
       setMode("As-is");
@@ -447,13 +469,7 @@ function Workbench() {
         ? semanticGraph?.nodes.find((node) => node.id === scope && node.kind === "logical_module")
         : undefined;
       if (target && semanticGraph) {
-        const result = await api<{
-          graph: Graph;
-          metadata: NonNullable<typeof analysisMeta>;
-        }>(`/api/snapshots/${snapshot.id}/semantic-blueprint/rebuild`, {
-          method: "POST",
-          body: JSON.stringify({ scope_node_id: target.id }),
-        });
+        const result = await executeBuildJob(target.id);
         setSemanticGraph(result.graph);
         setAnalysisMeta(result.metadata);
         setMode("As-is");
@@ -464,13 +480,7 @@ function Workbench() {
         setInfo(`局部重建完成：${result.metadata.scope_label || target.label}，范围内 ${result.metadata.scope_files ?? 0} 个 Python 文件，深度分析 ${result.metadata.analyzed_files} 个文件。上级与其他功能域保持不变。`);
         return;
       }
-      const result = await api<{
-        graph: Graph;
-        metadata: NonNullable<typeof analysisMeta>;
-      }>(
-        `/api/snapshots/${snapshot.id}/semantic-blueprint?force_refresh=true`,
-        { method: "POST" },
-      );
+      const result = await executeBuildJob();
       setSemanticGraph(result.graph);
       setAnalysisMeta(result.metadata);
       setMode("As-is");
@@ -633,7 +643,33 @@ function Workbench() {
           {error}
         </div>
       )}
-      {busy && <div role="status">处理中…</div>}
+      {busy && <div role="status">任务运行中，可查看构建阶段…</div>}
+      {buildProgress && !showBuildProgress && (
+        <button type="button" className="open-progress" onClick={() => setShowBuildProgress(true)}>
+          查看蓝图构建进度：{buildProgress.detail}
+        </button>
+      )}
+      {buildProgress && showBuildProgress && (
+        <div className="build-overlay">
+          <div className="build-modal" role="dialog" aria-modal="true" aria-label="蓝图构建进度">
+            <h3>AI 逻辑蓝图构建进度</h3>
+            <p className="build-stage">{buildProgress.detail}</p>
+            <p className="build-count">
+              {buildProgress.total_steps > 0
+                ? `当前任务步骤 ${buildProgress.completed_steps} / ${buildProgress.total_steps}`
+                : "正在建立分析任务"}
+            </p>
+            <p>执行状态：{buildProgress.status === "completed" ? "已完成"
+              : buildProgress.status === "failed" ? "失败"
+              : buildProgress.status === "queued" ? "排队中" : "正在运行"}</p>
+            {buildProgress.error && <p className="warning">{buildProgress.error}</p>}
+            <p className="build-caption">进度来自后端实际完成的分析阶段；递归功能域与工具调查可能耗时不同。</p>
+            <button type="button" onClick={() => setShowBuildProgress(false)}>
+              {busy ? "收起进度（任务继续）" : "关闭"}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="notice">
         {info || "从终端启动独立后端后，输入令牌并选择项目。"}
       </div>
