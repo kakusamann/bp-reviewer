@@ -19,13 +19,14 @@ from openai import OpenAI
 from pydantic import ValidationError
 
 from .models import Edge, Evidence, Graph, Node, Port, Snapshot
+from .experiment_profile import annotate_workflows
 from .hierarchy import hierarchical_projection
 from .relation_agent import enrich_dataflow
 from .scanner import directory_tree, safe_file
 from .structure import domain_for_path, project_catalog
 
 
-PROMPT_VERSION = "semantic-blueprint-v4-evidence-agent"
+PROMPT_VERSION = "semantic-blueprint-v5-workflow-profiles"
 CORE_TERMS = {
     "main",
     "app",
@@ -1079,7 +1080,9 @@ def _validate_and_build(state: BlueprintState) -> dict[str, Any]:
         scope_paths=state.get("scope_paths"),
     )
     graph, analysis = enrich_dataflow(root, graph)
+    graph, workflow_info = annotate_workflows(root, graph)
     metadata.update(analysis)
+    metadata.update(workflow_info)
     return {"result": {"graph": graph.model_dump(), "metadata": metadata}}
 
 
@@ -1184,24 +1187,25 @@ def build_semantic_blueprint(
             and node.parameters.get("structural_group") is True
             and node.label != "工程与辅助资源"
         ]
-        max_domains = max(0, min(int(os.environ.get("MIMO_MAX_RECURSIVE_DOMAINS", "8")), 40))
+        # Project structure determines business-module count; no fixed module quota.
         eligible = []
         for node in domain_nodes:
             try:
                 paths = _scope_paths_for_node(root, snapshot, graph, node.id)
             except AgentExecutionError:
                 continue
-            if sum(1 for path in paths if Path(path).suffix.lower() == ".py") >= 2:
+            if any(Path(path).suffix.lower() == ".py" for path in paths):
                 eligible.append(node.id)
         completed = 0
+        outcomes = []
         recursion_warnings = []
-        for index, scope_id in enumerate(eligible[:max_domains]):
+        for index, scope_id in enumerate(eligible):
             if progress_callback:
                 progress_callback(
                     "recursive_domains",
-                    f"递归细化功能域 {index + 1}/{min(len(eligible), max_domains)}：{next((n.label for n in graph.nodes if n.id == scope_id), scope_id)}",
+                    f"递归细化功能域 {index + 1}/{len(eligible)}：{next((n.label for n in graph.nodes if n.id == scope_id), scope_id)}",
                     index,
-                    min(len(eligible), max_domains),
+                    len(eligible),
                 )
             try:
                 refreshed = rebuild_semantic_blueprint_scope(
@@ -1215,13 +1219,18 @@ def build_semantic_blueprint(
                 )
                 graph = Graph.model_validate(refreshed["graph"])
                 completed += 1
+                outcomes.append({"node_id": scope_id, "status": "completed", "error": ""})
             except (AgentExecutionError, AgentConfigurationError, ValueError) as error:
-                recursion_warnings.append(f"未能递归整理功能域 {scope_id}：{str(error)[:180]}")
+                detail = str(error)[:180]
+                outcomes.append({"node_id": scope_id, "status": "failed", "error": detail})
+                recursion_warnings.append(f"未能递归整理功能域 {scope_id}：{detail}")
+        graph, workflow_info = annotate_workflows(root, graph)
         metadata = result.setdefault("metadata", {})
+        metadata.update(workflow_info)
         metadata["recursive_domains_built"] = completed
         metadata["recursive_domains_total"] = len(eligible)
-        if len(eligible) > max_domains:
-            recursion_warnings.append(f"递归功能域达到安全预算上限 {max_domains}；其余功能域仍可通过局部重建继续分析。")
+        metadata["recursive_domains_failed"] = len(eligible) - completed
+        metadata["recursive_outcomes"] = outcomes
         metadata["warnings"] = list(dict.fromkeys([*metadata.get("warnings", []), *recursion_warnings]))
         result["graph"] = graph.model_dump()
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1428,8 +1437,8 @@ def rebuild_semantic_blueprint_scope(
         for path in all_paths
         if Path(path).suffix.lower() == ".py" and any(node.id == "file:" + path for node in snapshot.graph.nodes)
     }
-    if len(python_paths) < 2:
-        raise AgentExecutionError("当前模块范围内不足 2 个可分析 Python 文件，无法进一步细分；可直接查看其源码证据。")
+    if not python_paths:
+        raise AgentExecutionError("此模块下没有可分析的 Python 文件；可查看已有的工作流说明与源码证据。")
 
     selected_ids = set()
     static_nodes = {node.id: node for node in snapshot.graph.nodes}
@@ -1474,7 +1483,9 @@ def rebuild_semantic_blueprint_scope(
         int(generated_result.get("metadata", {}).get("analyzed_files", 0)),
         all_paths,
     )
+    merged, workflow_info = annotate_workflows(root, merged)
     metadata = dict(generated_result.get("metadata", {}))
+    metadata.update(workflow_info)
     metadata.update(
         {
             "local_rebuild": True,
