@@ -432,3 +432,30 @@ aside label select { margin-top: 6px; }
 .build-count { color: var(--muted-strong); font-size: 12px; }
 .build-caption { font-size: 11px; color: var(--muted); line-height: 1.65; }
 .build-modal button { margin-top: 10px; }
+
+/* V5: research workflow / technical configuration inspector */
+.profile-inspector { display: flex; flex-direction: column; gap: 9px; font-size: 12px; line-height: 1.65; }
+.profile-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px;
+  border-radius: 10px; border: 1px solid var(--border); padding: 4px; background: var(--surface-subtle); }
+.profile-tabs button { margin: 0; width: 100%; padding: 7px 5px; min-width: 0;
+  font-size: 11px; color: var(--muted-strong); border: 0; background: transparent; }
+.profile-tabs button.active { background: var(--accent-soft); color: var(--ink); font-weight: 700; }
+.profile-inspector h4 { font-size: 12px; margin: 8px 0 2px; color: var(--ink); }
+.profile-inspector > p { margin: 2px 0 5px; }
+.profile-entry { border-radius: 9px; border: 1px solid var(--border); padding: 9px 10px;
+  background: var(--surface-subtle); overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 4px; }
+.profile-entries { display: flex; flex-direction: column; gap: 6px; }
+.profile-entry strong { font-size: 12px; color: var(--ink); font-weight: 650; }
+.profile-entry p { font-size: 11px; margin: 0; color: var(--muted-strong); }
+.profile-entry small { font-size: 10px; color: var(--muted); }
+.profile-value { font-weight: 750; color: var(--accent); font-variant-numeric: tabular-nums; }
+.profile-proof { border: 0; background: transparent; padding: 4px 0; text-align: left;
+  color: var(--accent); font-size: 10px; max-width: 100%; word-break: break-all; }
+.profile-empty, .profile-note { font-size: 11px; color: var(--muted); margin: 1px 0 9px; }
+.profile-limitations { border-left: 3px solid var(--amber); padding: 4px 10px;
+  background: var(--amber-soft); border-radius: 4px; font-size: 11px; color: var(--ink); }
+.profile-limitations p { margin: 5px 0; }
+.developer-details { margin-top: 12px; border: 1px solid var(--border); border-radius: 7px; padding: 8px; }
+.developer-details summary { cursor: pointer; font-size: 11px; color: var(--muted-strong); }
+.developer-details pre { max-height: 250px; overflow: auto; font-size: 10px; word-break: break-word; }
+:root[data-theme="dark"] .profile-entry strong { color: #f1f5ff; }
