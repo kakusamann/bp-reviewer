@@ -1,0 +1,28 @@
+name: One-time scoped test formatter
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/temporary-scoped-test-format.yml]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ruff==0.6.9
+      - run: python -m ruff format tests/test_scoped_blueprint.py
+      - run: python -m ruff check tests/test_scoped_blueprint.py
+      - name: Commit formatted test to main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/test_scoped_blueprint.py
+          if ! git diff --cached --quiet; then
+            git commit -m "style: format scoped rebuild regression diagnostics"
+            git push origin HEAD:main
+          fi
