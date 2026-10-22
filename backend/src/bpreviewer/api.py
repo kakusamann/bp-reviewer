@@ -115,6 +115,9 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
     def source(key: str, path: str, line: int = 1):
         snapshot = store.snapshot(key)
         root = project_root(key)
+        normalized_parts = path.replace("\\", "/").split("/")
+        if path.startswith(("/", "\\")) or any(part == ".." for part in normalized_parts):
+            raise HTTPException(403, "File path not allowed")
         file = safe_file(root, path)
         size = file.stat().st_size
         if not is_previewable(path, size):

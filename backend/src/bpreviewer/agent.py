@@ -17,7 +17,7 @@ from langgraph.graph import END, START, StateGraph
 from openai import OpenAI
 
 from .models import Edge, Evidence, Graph, Node, Port, Snapshot
-from .scanner import directory_tree, is_sensitive_path, safe_file
+from .scanner import directory_tree, safe_file
 
 
 PROMPT_VERSION = "semantic-blueprint-v1"
@@ -507,7 +507,11 @@ def _build_graph(root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]]
         for path in module["member_paths"][:20]:
             source_node = file_nodes.get(path)
             if source_node and source_node.evidence:
+                summary = summary_by_path.get(path, {})
+                line_candidates = summary.get("evidence_lines", [])
+                evidence_line = line_candidates[0] if line_candidates else source_node.evidence[0].line
                 proof = source_node.evidence[0].model_copy(update={
+                    "line": max(1, evidence_line),
                     "note": "逻辑模块成员文件；功能归属由静态证据与语义分析共同推断"
                 })
                 evidence.append(proof)

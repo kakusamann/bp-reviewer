@@ -2,7 +2,7 @@
 
 Blueprint-based Project Reviewer：只读分析本地 Python 项目，以证据图和拟议草稿整理可审阅的变更需求。
 
-适用于普通 Python 项目与科研代码库。React Flow 画布展示模块、顶层函数、静态导入/调用、中文端口说明和源码证据；可选 manifest 声明自动扫描无法确认的数据流。可展开模块、缩放、选择节点、检查类型/合同和源码哈希。
+适用于普通 Python 项目与科研代码库。React Flow 画布支持静态证据图与 LangGraph + MiMo 生成的分层逻辑蓝图；左侧真实目录树可定位文件并查看源码，逻辑模块支持逐层展开、输入输出端口、数据文件节点与证据追溯。Agent 只分析有限的核心代码片段并缓存结果；可选 manifest 声明自动扫描无法确认的数据流。
 
 独立工具；不运行目标代码、不训练模型、不自动修改目标源码。静态扫描无法完整还原运行数据流，详情见 [manifest 与证据边界](docs/manifest.md)。代码托管于用户指定的私有仓库，当前实现位于 `main` 分支。许可证评估见 [docs/licensing.md](docs/licensing.md)。
 
@@ -94,3 +94,8 @@ npm run build
 实际浏览器验收截图见 [截图说明](docs/screenshots/README.md)：合成示例的 A→B 重连、语义 Diff 和源码证据。已验证真实拖线、断开、重连、撤销/重做、保存后刷新恢复及 JSON/Markdown 下载；这些操作不修改目标源码。
 
 ![A→B 拟议重连](docs/screenshots/proposed-rewire.jpg)
+
+
+### MiMo logical blueprint (optional)
+
+Copy `.env.example` to `.env` and set `MIMO_API_KEY` to enable semantic blueprint generation. The UI sends only a bounded set of ranked Python excerpts to the configured MiMo endpoint; it does not upload complete repositories or data-artifact contents. Generated relationships remain inferred or unverified. See [semantic Agent workflow](docs/semantic-agent.md) and [UI design direction](docs/ui-design.md).

@@ -221,6 +221,11 @@ function Workbench() {
           allowed.add(current.path);
           current = current.parent ? byPath.get(current.parent) : undefined;
         }
+        if (entry.kind === "directory") {
+          for (const child of treeEntries) {
+            if (child.path.startsWith(entry.path + "/")) allowed.add(child.path);
+          }
+        }
       }
     }
     return treeEntries.filter((entry) => allowed.has(entry.path));

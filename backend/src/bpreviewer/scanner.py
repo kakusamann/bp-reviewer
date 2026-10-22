@@ -106,6 +106,7 @@ def directory_tree(root: Path, max_entries: int = 10000, max_depth: int = 16) ->
             entries.append({
                 "path": rel, "name": name, "parent": directory.relative_to(root).as_posix() if depth else "",
                 "kind": "directory", "depth": depth, "size": None, "extension": "",
+                "modified_ns": (directory / name).stat().st_mtime_ns,
                 "previewable": False, "sensitive": False,
             })
         if len(entries) >= max_entries:
@@ -128,6 +129,7 @@ def directory_tree(root: Path, max_entries: int = 10000, max_depth: int = 16) ->
             entries.append({
                 "path": rel, "name": name, "parent": directory.relative_to(root).as_posix() if depth else "",
                 "kind": "file", "depth": depth, "size": size, "extension": rel_path.suffix.lower(),
+                "modified_ns": rel_path.stat().st_mtime_ns,
                 "previewable": is_previewable(rel, size), "sensitive": is_sensitive_path(rel),
             })
         if len(entries) >= max_entries:
