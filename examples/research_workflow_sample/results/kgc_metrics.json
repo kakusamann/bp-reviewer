@@ -1,0 +1,11 @@
+{
+  "run_id": "demo-run-001",
+  "model": "RotatE",
+  "metrics": {
+    "MRR": 0.37,
+    "Hits@1": 0.24,
+    "Hits@3": 0.42,
+    "Hits@10": 0.63
+  },
+  "note": "Synthetic illustrative numbers; not measured."
+}
