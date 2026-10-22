@@ -266,7 +266,9 @@ def _index_project(state: BlueprintState) -> dict[str, Any]:
 
 
 def _label_domains(state: BlueprintState) -> dict[str, Any]:
-    """One compact MiMo call labels structural areas without uploading source contents."""
+    """Label global functional areas; scoped rebuilds flatten structural groups and skip this call."""
+    if state.get("scope_paths") is not None:
+        return {"domain_labels": {}}
     catalog = state["catalog"]
     # Keep a bounded overview; everything beyond this limit retains its deterministic label.
     payload = {
@@ -336,9 +338,22 @@ def _select_candidates(state: BlueprintState) -> dict[str, Any]:
         scored.append((score, relative, node))
     scored.sort(key=lambda item: (-item[0], item[1].casefold()))
 
-    max_files = max(1, min(int(os.environ.get("MIMO_MAX_ANALYSIS_FILES", "8")), 12))
+    scoped = state.get("scope_paths") is not None
+    max_files = max(
+        1,
+        min(
+            int(os.environ.get("MIMO_MAX_SCOPED_ANALYSIS_FILES", "4") if scoped else os.environ.get("MIMO_MAX_ANALYSIS_FILES", "8")),
+            8 if scoped else 12,
+        ),
+    )
     max_file_chars = max(1000, min(int(os.environ.get("MIMO_MAX_FILE_CHARS", "3500")), 6000))
-    total_budget = max(8000, min(int(os.environ.get("MIMO_MAX_TOTAL_CHARS", "22000")), 32000))
+    total_budget = max(
+        4000 if scoped else 8000,
+        min(
+            int(os.environ.get("MIMO_MAX_SCOPED_TOTAL_CHARS", "12000") if scoped else os.environ.get("MIMO_MAX_TOTAL_CHARS", "22000")),
+            16000 if scoped else 32000,
+        ),
+    )
     candidates = []
     used_chars = 0
     # Stratify by the catalog to avoid high-degree API files monopolizing the budget.
@@ -1127,7 +1142,7 @@ def build_semantic_blueprint(
             and node.parameters.get("structural_group") is True
             and node.label != "工程与辅助资源"
         ]
-        max_domains = max(0, min(int(os.environ.get("MIMO_MAX_RECURSIVE_DOMAINS", "12")), 40))
+        max_domains = max(0, min(int(os.environ.get("MIMO_MAX_RECURSIVE_DOMAINS", "8")), 40))
         eligible = []
         for node in domain_nodes:
             try:
