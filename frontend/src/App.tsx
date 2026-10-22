@@ -99,6 +99,11 @@ function Workbench() {
     unreviewed_files: number;
     cache_hit: boolean;
     warnings: string[];
+    recursive_domains_built?: number;
+    recursive_domains_total?: number;
+    local_rebuild?: boolean;
+    scope_label?: string;
+    scope_files?: number;
   }>();
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [mode, setMode] = useState<"As-is" | "Proposed" | "Diff">("As-is");
@@ -379,6 +384,74 @@ function Workbench() {
       setReport(result);
       setMode("Diff");
     });
+  const rebuildScope = (scopeNodeId: string, navigateAfter = true) =>
+    run(async () => {
+      if (!snapshot || !semanticGraph) return;
+      const result = await api<{
+        graph: Graph;
+        metadata: NonNullable<typeof analysisMeta>;
+      }>(`/api/snapshots/${snapshot.id}/semantic-blueprint/rebuild`, {
+        method: "POST",
+        body: JSON.stringify({ scope_node_id: scopeNodeId, graph: semanticGraph }),
+      });
+      setSemanticGraph(result.graph);
+      setAnalysisMeta(result.metadata);
+      setMode("As-is");
+      setViewMode("logical");
+      if (navigateAfter) setScope(scopeNodeId);
+      setSelected("");
+      setEdgeId("");
+      setQuery("");
+      const name = result.metadata.scope_label || "当前模块";
+      setInfo(`局部重建完成：${name}，范围内 ${result.metadata.scope_files ?? 0} 个 Python 文件，深度分析 ${result.metadata.analyzed_files} 个文件。上级与其他功能域保持不变。`);
+    });
+
+  const buildBlueprint = () =>
+    run(async () => {
+      if (!snapshot) return;
+      const target = scope !== "modules" && scope !== "all"
+        ? semanticGraph?.nodes.find((node) => node.id === scope && node.kind === "logical_module")
+        : undefined;
+      if (target && semanticGraph) {
+        const result = await api<{
+          graph: Graph;
+          metadata: NonNullable<typeof analysisMeta>;
+        }>(`/api/snapshots/${snapshot.id}/semantic-blueprint/rebuild`, {
+          method: "POST",
+          body: JSON.stringify({ scope_node_id: target.id, graph: semanticGraph }),
+        });
+        setSemanticGraph(result.graph);
+        setAnalysisMeta(result.metadata);
+        setMode("As-is");
+        setViewMode("logical");
+        setSelected("");
+        setEdgeId("");
+        setQuery("");
+        setInfo(`局部重建完成：${result.metadata.scope_label || target.label}，范围内 ${result.metadata.scope_files ?? 0} 个 Python 文件，深度分析 ${result.metadata.analyzed_files} 个文件。上级与其他功能域保持不变。`);
+        return;
+      }
+      const result = await api<{
+        graph: Graph;
+        metadata: NonNullable<typeof analysisMeta>;
+      }>(
+        `/api/snapshots/${snapshot.id}/semantic-blueprint?force_refresh=true`,
+        { method: "POST" },
+      );
+      setSemanticGraph(result.graph);
+      setAnalysisMeta(result.metadata);
+      setMode("As-is");
+      setViewMode("logical");
+      setScope("modules");
+      setSelected("");
+      setEdgeId("");
+      setQuery("");
+      const recursion = result.metadata.recursive_domains_built === undefined
+        ? ""
+        : `；已递归整理 ${result.metadata.recursive_domains_built}/${result.metadata.recursive_domains_total ?? result.metadata.recursive_domains_built} 个功能域`;
+      const cacheNote = result.metadata.cache_hit ? "（命中缓存）" : "";
+      setInfo(`全局逻辑蓝图已构建：${result.metadata.analyzed_files} 个深度分析文件、${result.metadata.project_domains ?? "若干"} 个功能域、${result.metadata.data_artifacts} 个数据资产节点${recursion}${cacheNote}。`);
+    });
+
   const download = (format: "json" | "markdown") => {
     if (!report) return;
     const blob = new Blob(
@@ -567,26 +640,14 @@ function Workbench() {
             <button
               className="agent-action"
               disabled={!snapshot || busy}
-              title="将少量核心 Python 代码片段发送到已配置的 MiMo API；不会上传完整项目或数据文件内容。"
-              onClick={() => void run(async () => {
-                if (!snapshot) return;
-                const result = await api<{ graph: Graph; metadata: NonNullable<typeof analysisMeta> }>(
-                  "/api/snapshots/" + snapshot.id + "/semantic-blueprint",
-                  { method: "POST" },
-                );
-                setSemanticGraph(result.graph);
-                setAnalysisMeta(result.metadata);
-                setMode("As-is");
-                setViewMode("logical");
-                setScope("modules");
-                setSelected("");
-                setEdgeId("");
-                setQuery("");
-                const cacheNote = result.metadata.cache_hit ? "（命中缓存，未重新调用模型）" : "";
-                setInfo("逻辑蓝图已生成：" + result.metadata.analyzed_files + " 个深度分析文件、" + (result.metadata.project_domains ?? "若干") + " 个全项目功能域、" + result.metadata.data_artifacts + " 个数据资产节点。" + cacheNote);
-              })}
+              title={scope !== "modules" && scope !== "all"
+                ? "仅重新分析当前逻辑模块的下层内容，保留其他模块与上级结构。"
+                : "重新构建全项目逻辑蓝图，并按功能域递归整理下层结构。"}
+              onClick={() => void buildBlueprint()}
             >
-              AI 构建逻辑蓝图
+              {scope !== "modules" && scope !== "all" && semanticGraph?.nodes.some((node) => node.id === scope && node.kind === "logical_module")
+                ? "重建当前模块"
+                : "AI 构建逻辑蓝图"}
             </button>
             <span>
               {snapshot.project_name} ·{" "}
@@ -767,12 +828,25 @@ function Workbench() {
                 <option value="modules">功能域概览</option>
                 <option value="all">全部节点</option>
                 {graph.nodes
-                  .filter((n) => !n.parent)
-                  .map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.label}
-                    </option>
-                  ))}
+                  .filter((node) =>
+                    node.kind === "logical_module" &&
+                    graph.nodes.some((child) => child.parent === node.id)
+                  )
+                  .map((node) => {
+                    let depth = 0;
+                    let parent = node.parent;
+                    const seen = new Set<string>();
+                    while (parent && !seen.has(parent)) {
+                      seen.add(parent);
+                      depth += 1;
+                      parent = graph.nodes.find((item) => item.id === parent)?.parent || "";
+                    }
+                    return (
+                      <option key={node.id} value={node.id}>
+                        {"　".repeat(Math.min(depth, 6))}{node.label}
+                      </option>
+                    );
+                  })}
               </select>
               <p>
                 节点 {graph.nodes.length} · 关系 {graph.edges.length}
@@ -784,6 +858,10 @@ function Workbench() {
                   深度分析 {analysisMeta.analyzed_files} 个文件 · 全项目分组 {analysisMeta.project_domains ?? "—"} 个功能域
                   <br />
                   未深度分析的文件保留为下层证据
+                  <br />
+                  {analysisMeta.local_rebuild
+                    ? `局部重建：${analysisMeta.scope_label || "当前模块"}`
+                    : `递归整理功能域：${analysisMeta.recursive_domains_built ?? 0}/${analysisMeta.recursive_domains_total ?? "—"}`}
                   <br />
                   {analysisMeta.cache_hit ? "使用缓存结果" : "本次调用模型"}
                 </p>
@@ -875,7 +953,12 @@ function Workbench() {
                     setEdgeId("");
                   }}
                   onNodeDoubleClick={(_, node) => {
-                    if (graph.nodes.some((child) => child.parent === node.id)) setScope(node.id);
+                    if (graph.nodes.some((child) => child.parent === node.id)) {
+                      setScope(node.id);
+                      setQuery("");
+                      setSelected("");
+                      setEdgeId("");
+                    }
                   }}
                   onEdgeClick={(_, e) => {
                     setEdgeId(e.id);
@@ -944,6 +1027,15 @@ function Workbench() {
                       onChange={(e) => setParamsText(e.target.value)}
                     />
                   </label>
+                  {viewMode === "logical" && mode === "As-is" && current.kind === "logical_module" && (
+                    <button
+                      disabled={busy}
+                      onClick={() => void rebuildScope(current.id)}
+                      title="只重新分析当前模块内部的文件与子模块，不修改其他分支。"
+                    >
+                      AI 重建此模块内部
+                    </button>
+                  )}
                   <button
                     disabled={!editable}
                     onClick={() => {
