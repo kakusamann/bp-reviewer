@@ -401,3 +401,21 @@ aside label select { margin-top: 6px; }
 .blueprint-toggle { display: flex !important; align-items: center; gap: 8px; margin: 6px 0 !important; line-height: 1.5; }
 .blueprint-toggle input { width: 14px; height: 14px; margin: 0; flex: 0 0 auto; }
 .blueprint-navigation p { margin-bottom: 0; }
+
+/* V4: layered workbench navigation and explicit dark node typography. */
+.layer-switch { display: flex; gap: 5px; padding: 4px; border: 1px solid var(--border);
+  border-radius: 9px; background: var(--surface-subtle); margin: 0 0 12px; }
+.layer-switch button { width: auto; flex: 1; margin: 0; padding: 7px 3px;
+  font-size: 11px; border: 0; background: transparent; color: var(--muted-strong); }
+.layer-switch button.active { color: var(--ink); background: var(--surface);
+  box-shadow: var(--shadow-sm); font-weight: 700; }
+.empty-layer { margin: 12px 0; padding: 12px; border: 1px dashed var(--border-strong);
+  border-radius: 9px; color: var(--muted-strong); }
+.empty-layer p { margin: 0 0 8px; }
+:root[data-theme="dark"] .card { color: #e8eef9; }
+:root[data-theme="dark"] .card strong { color: #f5f7ff !important; }
+:root[data-theme="dark"] .card .port button { color: #e5ecff; }
+:root[data-theme="dark"] .card .port em { color: #a9bade; }
+:root[data-theme="dark"] .react-flow__edge-text { fill: #dce7ff !important; }
+:root[data-theme="dark"] .react-flow__edge-textbg { fill: #192439 !important; }
+:root[data-theme="dark"] .layer-switch button.active { color: #f5f7ff; background: #273449; }
