@@ -3,6 +3,7 @@
 Tool output is never treated as observed runtime behavior. Only literal file I/O
 with a real source reference can create data ports and data-flow relations.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -47,12 +48,18 @@ def _probe_mimo(root: Path, paths: list[str]) -> int:
         timeout=30.0,
     )
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": (
-            "你是代码数据流核验助手。必须先调用工具查看选定模块的源码事实。"
-            "仅判断输入输出；不执行代码，不猜测没有证据的运行时关系。"
-            "输出简短 JSON 摘要；工具执行结果才是事实依据。"
-        )},
-        {"role": "user", "content": json.dumps({"files": paths[:5], "task": "通过静态工具检查输入输出"}, ensure_ascii=False)},
+        {
+            "role": "system",
+            "content": (
+                "你是代码数据流核验助手。必须先调用工具查看选定模块的源码事实。"
+                "仅判断输入输出；不执行代码，不猜测没有证据的运行时关系。"
+                "输出简短 JSON 摘要；工具执行结果才是事实依据。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps({"files": paths[:5], "task": "通过静态工具检查输入输出"}, ensure_ascii=False),
+        },
     ]
     calls = 0
     for _ in range(2):
@@ -79,11 +86,13 @@ def _probe_mimo(root: Path, paths: list[str]) -> int:
                 result = execute_tool(root, paths, call.function.name, arguments)
             except (OSError, ValueError, SyntaxError, TypeError, json.JSONDecodeError) as error:
                 result = {"error": str(error)[:180]}
-            messages.append({
-                "role": "tool",
-                "tool_call_id": call.id,
-                "content": json.dumps(result, ensure_ascii=False)[:5000],
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": json.dumps(result, ensure_ascii=False)[:5000],
+                }
+            )
         if calls >= 5:
             break
     return calls
@@ -107,8 +116,12 @@ def enrich_dataflow(root: Path, graph: Graph, *, enable_mimo_tools: bool = True)
         for item in entries:
             sig = item["direction"] + "|" + item["name"]
             port_id = "io_" + hashlib.sha256(sig.encode()).hexdigest()[:12]
-            proof = Evidence(path=item["path"], line=item["line"], status="STATIC_INFERRED",
-                             note="AST 静态识别到文件读写；不等于运行时已执行。")
+            proof = Evidence(
+                path=item["path"],
+                line=item["line"],
+                status="STATIC_INFERRED",
+                note="AST 静态识别到文件读写；不等于运行时已执行。",
+            )
             port = next((p for p in node.ports if p.id == port_id), None)
             if port is None:
                 if len(node.ports) >= 24:
@@ -119,8 +132,12 @@ def enrich_dataflow(root: Path, graph: Graph, *, enable_mimo_tools: bool = True)
                     label=("读取 " if item["direction"] == "input" else "写出 ") + Path(item["name"]).name,
                     data_type=item["data_type"],
                     description=f"源码 {item['path']}:{item['line']} 使用 {item['operation']} 操作",
-                    semantics={"evidence_path": item["path"], "evidence_line": str(item["line"]),
-                               "artifact_path": item["name"], "basis": "static_ast"},
+                    semantics={
+                        "evidence_path": item["path"],
+                        "evidence_line": str(item["line"]),
+                        "artifact_path": item["name"],
+                        "basis": "static_ast",
+                    },
                 )
                 node.ports.append(port)
                 existing_ports.add(port_id)
@@ -137,31 +154,43 @@ def enrich_dataflow(root: Path, graph: Graph, *, enable_mimo_tools: bool = True)
                     continue
                 # Nested modules must not create duplicate edges at every ancestor level.
                 nodes = {node.id: node for node in graph.nodes}
-                if nodes[source_id].parameters.get("structural_group") or nodes[target_id].parameters.get("structural_group"):
+                if nodes[source_id].parameters.get("structural_group") or nodes[target_id].parameters.get(
+                    "structural_group"
+                ):
                     continue
                 signature = "|".join([source_id, source_port.id, target_id, target_port.id, literal])
                 edge_id = "agent:ast-data:" + hashlib.sha256(signature.encode()).hexdigest()[:24]
                 if edge_id in existing:
                     continue
-                graph.edges.append(Edge(
-                    id=edge_id, source=source_id, source_port=source_port.id,
-                    target=target_id, target_port=target_port.id,
-                    kind="data", status="STATIC_INFERRED",
-                    evidence=[source_proof, target_proof],
-                ))
+                graph.edges.append(
+                    Edge(
+                        id=edge_id,
+                        source=source_id,
+                        source_port=source_port.id,
+                        target=target_id,
+                        target_port=target_port.id,
+                        kind="data",
+                        status="STATIC_INFERRED",
+                        evidence=[source_proof, target_proof],
+                    )
+                )
                 existing.add(edge_id)
                 added += 1
 
     tool_calls = 0
     if enable_mimo_tools and os.environ.get("MIMO_ENABLE_TOOL_CALLING", "true").lower() == "true":
         # Probe only one unclear module per build; deterministic AST evidence covers all modules.
-        candidates = [(node_id, paths) for node_id, paths in memberships.items()
-                      if len(paths) >= 2 and len(facts.get(node_id, {}).get("io", [])) == 0]
+        candidates = [
+            (node_id, paths)
+            for node_id, paths in memberships.items()
+            if len(paths) >= 2 and len(facts.get(node_id, {}).get("io", [])) == 0
+        ]
         candidates.sort(key=lambda pair: (-len(pair[1]), pair[0]))
         if candidates:
             tool_calls = _probe_mimo(root, candidates[0][1][:5])
     return Graph.model_validate(graph), {
-        "ast_data_ports": inferred, "ast_data_relations": added,
+        "ast_data_ports": inferred,
+        "ast_data_relations": added,
         "agent_tool_calls": tool_calls,
         "evidence_file_count": len({path for paths in memberships.values() for path in paths}),
     }

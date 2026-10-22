@@ -18,8 +18,14 @@ def test_blueprint_job_reports_real_stage_and_returns_result(tmp_path, monkeypat
     scanned = client.post("/api/projects/scan", json={"path": str(root)})
     assert scanned.status_code == 200
     snapshot = scanned.json()
-    assert client.post(f"/api/snapshots/{snapshot['id']}/semantic-blueprint/jobs", json={},
-                       headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert (
+        client.post(
+            f"/api/snapshots/{snapshot['id']}/semantic-blueprint/jobs",
+            json={},
+            headers={"Authorization": "Bearer wrong"},
+        ).status_code
+        == 401
+    )
 
     def fake_build(root, snapshot, state_dir, force_refresh=False, progress_callback=None):
         assert force_refresh

@@ -15,15 +15,13 @@ def test_ast_tools_do_not_execute_target_code_and_guard_scope(tmp_path: Path):
     consumer = tmp_path / "consumer.py"
     producer.write_text(
         'raise RuntimeError("must never be run")\n'
-        'def export(destination: str):\n'
+        "def export(destination: str):\n"
         '    with open("shared.csv", "w") as handle:\n'
         '        handle.write("x")\n',
         encoding="utf-8",
     )
     consumer.write_text(
-        'raise RuntimeError("must never be run")\n'
-        'def load_data():\n'
-        '    return read_csv("shared.csv")\n',
+        'raise RuntimeError("must never be run")\n' "def load_data():\n" '    return read_csv("shared.csv")\n',
         encoding="utf-8",
     )
     initial = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in [producer, consumer]}
@@ -53,14 +51,26 @@ def test_static_input_output_ports_include_evidence_and_link(tmp_path: Path, mon
     monkeypatch.setenv("MIMO_ENABLE_TOOL_CALLING", "false")
     port_in = Port(id="in", io="input", label="汇总输入")
     port_out = Port(id="out", io="output", label="汇总输出")
-    graph = Graph(nodes=[
-        Node(id="m1", label="原始数据", kind="logical_module", ports=[port_in, port_out]),
-        Node(id="m2", label="消费数据", kind="logical_module", ports=[port_in, port_out]),
-        Node(id="file:producer.py", label="producer.py", kind="code_file",
-             parent="m1", evidence=[Evidence(path="producer.py")]),
-        Node(id="file:consumer.py", label="consumer.py", kind="code_file",
-             parent="m2", evidence=[Evidence(path="consumer.py")]),
-    ])
+    graph = Graph(
+        nodes=[
+            Node(id="m1", label="原始数据", kind="logical_module", ports=[port_in, port_out]),
+            Node(id="m2", label="消费数据", kind="logical_module", ports=[port_in, port_out]),
+            Node(
+                id="file:producer.py",
+                label="producer.py",
+                kind="code_file",
+                parent="m1",
+                evidence=[Evidence(path="producer.py")],
+            ),
+            Node(
+                id="file:consumer.py",
+                label="consumer.py",
+                kind="code_file",
+                parent="m2",
+                evidence=[Evidence(path="consumer.py")],
+            ),
+        ]
+    )
     enriched, info = enrich_dataflow(tmp_path, graph)
     assert info["ast_data_ports"] == 2
     assert info["ast_data_relations"] == 1

@@ -1169,7 +1169,8 @@ def build_semantic_blueprint(
                 progress_callback(
                     next_stage[0] if next_stage else "base_complete",
                     next_stage[1] if next_stage else "基础蓝图构建完成",
-                    index + 1, len(stage_order),
+                    index + 1,
+                    len(stage_order),
                 )
     if result is None:
         raise AgentExecutionError("蓝图工作流没有产生有效结果")
@@ -1199,11 +1200,17 @@ def build_semantic_blueprint(
                 progress_callback(
                     "recursive_domains",
                     f"递归细化功能域 {index + 1}/{min(len(eligible), max_domains)}：{next((n.label for n in graph.nodes if n.id == scope_id), scope_id)}",
-                    index, min(len(eligible), max_domains),
+                    index,
+                    min(len(eligible), max_domains),
                 )
             try:
                 refreshed = rebuild_semantic_blueprint_scope(
-                    root, snapshot, graph, scope_id, state_dir, force_refresh=force_refresh,
+                    root,
+                    snapshot,
+                    graph,
+                    scope_id,
+                    state_dir,
+                    force_refresh=force_refresh,
                     progress_callback=progress_callback,
                 )
                 graph = Graph.model_validate(refreshed["graph"])

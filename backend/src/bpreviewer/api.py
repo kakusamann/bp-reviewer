@@ -152,39 +152,69 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
                 raise HTTPException(429, "已有两个蓝图任务正在运行，请查看任务进度")
             job_id = secrets.token_urlsafe(16)
             jobs[job_id] = {
-                "snapshot_id": key, "status": "queued", "stage": "queued",
-                "detail": "任务已进入队列", "completed_steps": 0, "total_steps": 0,
-                "updated_at": now, "result": None, "error": "",
+                "snapshot_id": key,
+                "status": "queued",
+                "stage": "queued",
+                "detail": "任务已进入队列",
+                "completed_steps": 0,
+                "total_steps": 0,
+                "updated_at": now,
+                "result": None,
+                "error": "",
             }
 
         def progress(stage: str, detail: str, done: int, total: int):
             with jobs_lock:
                 job = jobs[job_id]
-                job.update(status="running", stage=stage, detail=detail,
-                           completed_steps=done, total_steps=total, updated_at=time.monotonic())
+                job.update(
+                    status="running",
+                    stage=stage,
+                    detail=detail,
+                    completed_steps=done,
+                    total_steps=total,
+                    updated_at=time.monotonic(),
+                )
 
         def worker():
             try:
                 progress("starting", "正在启动只读分析", 0, 0)
                 if request.scope_node_id:
                     result = rebuild_semantic_blueprint_scope(
-                        root, snapshot, None, request.scope_node_id, store.state,
-                        force_refresh=request.force_refresh, progress_callback=progress,
+                        root,
+                        snapshot,
+                        None,
+                        request.scope_node_id,
+                        store.state,
+                        force_refresh=request.force_refresh,
+                        progress_callback=progress,
                     )
                 else:
                     result = build_semantic_blueprint(
-                        root, snapshot, store.state, force_refresh=request.force_refresh,
+                        root,
+                        snapshot,
+                        store.state,
+                        force_refresh=request.force_refresh,
                         progress_callback=progress,
                     )
                 with jobs_lock:
-                    jobs[job_id].update(status="completed", stage="complete",
-                                        detail="分析完成", result=result, updated_at=time.monotonic())
+                    jobs[job_id].update(
+                        status="completed",
+                        stage="complete",
+                        detail="分析完成",
+                        result=result,
+                        updated_at=time.monotonic(),
+                    )
             except Exception as error:
                 # Never expose arbitrary exception dumps that might contain secrets or source.
-                message = str(error)[:400] if isinstance(error, (AgentExecutionError, AgentConfigurationError, ValueError)) else "内部构建失败，请检查后端日志"
+                message = (
+                    str(error)[:400]
+                    if isinstance(error, (AgentExecutionError, AgentConfigurationError, ValueError))
+                    else "内部构建失败，请检查后端日志"
+                )
                 with jobs_lock:
-                    jobs[job_id].update(status="failed", stage="failed",
-                                        detail="分析失败", error=message, updated_at=time.monotonic())
+                    jobs[job_id].update(
+                        status="failed", stage="failed", detail="分析失败", error=message, updated_at=time.monotonic()
+                    )
 
         threading.Thread(target=worker, name="bp-blueprint-" + job_id[:6], daemon=True).start()
         return {"job_id": job_id, "status": "queued"}
@@ -196,10 +226,16 @@ def create_app(state: Path, allowed_roots: list[Path], token: str) -> FastAPI:
             job = jobs.get(job_id)
             if not job or job["snapshot_id"] != key:
                 raise HTTPException(404, "蓝图任务不存在或已过期")
-            return {"job_id": job_id, "status": job["status"], "stage": job["stage"],
-                    "detail": job["detail"], "completed_steps": job["completed_steps"],
-                    "total_steps": job["total_steps"], "error": job["error"],
-                    "result": job["result"] if job["status"] == "completed" else None}
+            return {
+                "job_id": job_id,
+                "status": job["status"],
+                "stage": job["stage"],
+                "detail": job["detail"],
+                "completed_steps": job["completed_steps"],
+                "total_steps": job["total_steps"],
+                "error": job["error"],
+                "result": job["result"] if job["status"] == "completed" else None,
+            }
 
     @app.get("/api/snapshots/{key}/tree")
     def tree(key: str):
