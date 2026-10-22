@@ -42,7 +42,7 @@ def hierarchical_projection(
         )
     )
 
-    indexed_files = {node.evidence[0].path: node for node in retained if node.id.startswith("file:") and node.evidence}
+    indexed_files = {node.evidence[0].path: node for node in retained if node.evidence and node.id == "file:" + node.evidence[0].path}
     domain_ids = {}
     for group in catalog:
         key = group["key"]
@@ -84,7 +84,7 @@ def hierarchical_projection(
         module_parents[module_id] = domain_ids.get(primary, support_id)
 
     for i, node in enumerate(retained):
-        if node.kind == "code_file" and node.evidence and node.id.startswith("file:"):
+        if node.kind == "code_file" and node.evidence and node.id == "file:" + node.evidence[0].path:
             path = node.evidence[0].path
             if node.parent not in module_parents:
                 retained[i] = node.model_copy(update={"parent": domain_ids.get(domain_for_path(path), support_id)})
