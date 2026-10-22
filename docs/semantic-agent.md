@@ -1,28 +1,23 @@
-# Semantic blueprint Agent
+# Semantic Blueprint v2：全项目分层逻辑架构
 
-## Workflow
+## 执行阶段
 
-BP-Reviewer uses LangGraph to orchestrate a bounded, deterministic workflow:
+1. **全项目静态索引**：扫描已经建立的 AST 文件图与真实目录索引，按源包中的功能域、工程辅助区域分组；其他语言的源码文件也保留路径证据。本阶段不执行项目代码、不调用模型。
+2. **候选功能域**：使用源码路径、函数名称和文件静态依赖为各功能域建立精简结构概况。这些是结构候选，不自动声称业务行为。
+3. **MiMo 语义理解**：先使用一轮小型请求为候选功能域命名，再从不同功能域分层选取少量代表性 Python 代码片段，生成文件功能摘要并聚合为子功能。不会将全部源码或数据内容发送给 MiMo。未深度分析的文件保留为真实证据，而不是单独生成顶层“未分析文件”模块。
+4. **分层蓝图**：投影为「功能域 → 语义子模块 → 代码文件 → 函数」；工程测试/配置/文档及结构化数据文件放在独立的工程辅助区域下。跨功能域的 LLM 关系仍标记为 `UNVERIFIED`；代码静态导入不等同于数据流。
+5. **交互展示**：默认在逻辑层仅显示数据/控制流，隐藏静态导入和 contains 连线；提供开关、自动 Dagre 布局、双击逐级展开、面包屑导航和源码目录定位。
 
-1. Select a small number of high-value Python files using static graph centrality, entry-point names, and top-level function density.
-2. Send only selected, line-numbered excerpts and static facts to MiMo in one batch for structured summaries.
-3. Aggregate summaries into proposed logical modules and candidate module relationships.
-4. Validate all returned paths against the selected-file set, build the logical graph, and label LLM-proposed edges as `UNVERIFIED`.
-5. Cache the result outside the inspected project using the snapshot ID, model name, and prompt version.
+## MiMo / Token 限制
 
-The default limit is eight Python files per analysis, with per-file and total character budgets configurable in `.env`. Unselected code files are grouped by their real directories and are not sent to the model. Data-artifact contents are never sent to MiMo.
+复制仓库根目录 `.env.example` 为 `.env`，填写 `MIMO_API_KEY`。使用兼容 OpenAI API 的接口，默认 `MIMO_BASE_URL=https://api.xiaomimimo.com/v1` 和 `MIMO_MODEL=mimo-v2.5-pro`，具体按账号授权的模型调整。
 
-## MiMo configuration
+- 源代码阶段默认最多选 8 个候选 Python 文件（硬上限 12）；每文件最多 3500 字符，总量 22000 字符，可在 `.env` 调整。
+- 功能域摘要使用文件路径、静态符号和计数，不传输真实数据文件内容。调用成本比原版增加一轮轻量命名请求。
+- 结果按快照 ID、模型名称、提示词版本缓存；v2 单独版本键会重建旧缓存。
+- 分组与模块名称是候选推断；用户应依据右侧 Inspector 的源码证据核验。
 
-Copy `.env.example` to `.env` in the BP-Reviewer repository root and fill in `MIMO_API_KEY`. The default OpenAI-compatible base URL is `https://api.xiaomimimo.com/v1`, and the default model is `mimo-v2.5-pro`. Change `MIMO_MODEL` if the API plan provides a different model. The backend loads `.env`; the browser never receives the API key.
+## 当前技术边界
 
-Official MiMo API documentation: https://platform.xiaomimimo.com/docs/en-US/usage-guide/passing-back-reasoning_content
-
-## Evidence boundaries
-
-- The Agent never imports, executes, compiles, or modifies the inspected project.
-- Static import and literal-path file I/O edges remain static inferences.
-- LLM-proposed data/control edges are `UNVERIFIED` and must be reviewed.
-- Actual data files are discovered from the local directory tree; their contents are not uploaded.
-- Sensitive filenames such as `.env`, private keys, and credentials are not previewed.
-- The API key, full project, and data-file contents are not written to the semantic cache. The cache stores the generated graph and metadata outside the project.
+目录与函数签名是结构证据，而非运行时事实；静态输入输出不证明实际执行。动态图、反射、动态 I/O 路径和外部服务尚不能自动恢复完整调用链。对于大型项目，功能域分组由目录结构提供初始边界，复杂跨目录功能可能仍需人工调整。新增非 Python 源码节点仅提供文件存在性证据，不声称进行了 AST 解析。
+原始项目只读，不执行、不导入、不编译或修改目标源码。密钥仅位于后端，不会传给浏览器。
