@@ -1261,7 +1261,7 @@ def _merge_scoped_graph(
         node.id for node in generated.nodes
         if (node.kind == "logical_module" and node.id.startswith("agent:module:"))
         or (
-            node.kind in {"code_file", "function"}
+            node.kind in {"code_file", "function", "class", "file"}
             and any(proof.path in set(scope_paths) for proof in node.evidence)
         )
         or (
