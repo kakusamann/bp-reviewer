@@ -9,7 +9,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
-from .agent import AgentConfigurationError, AgentExecutionError, build_semantic_blueprint, rebuild_semantic_blueprint_scope
+from .agent import (
+    AgentConfigurationError,
+    AgentExecutionError,
+    build_semantic_blueprint,
+    rebuild_semantic_blueprint_scope,
+)
 from .models import Graph, Manifest, Model
 from .review import change_request, validate
 from .scanner import directory_tree, digest, is_previewable, safe_file

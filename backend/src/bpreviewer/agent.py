@@ -1095,9 +1095,7 @@ def build_semantic_blueprint(
     """Build a cached logical blueprint, optionally restricted to a subtree's files."""
     model = os.environ.get("MIMO_MODEL", "mimo-v2.5-pro").strip()
     scope_digest = hashlib.sha256("\\n".join(sorted(set(scope_paths or []))).encode("utf-8")).hexdigest()[:16]
-    cache_key = hashlib.sha256(
-        f"{snapshot.id}|{model}|{PROMPT_VERSION}|{scope_digest}".encode("utf-8")
-    ).hexdigest()
+    cache_key = hashlib.sha256(f"{snapshot.id}|{model}|{PROMPT_VERSION}|{scope_digest}".encode("utf-8")).hexdigest()
     cache_path = state_dir / "semantic-blueprints" / f"{cache_key}.json"
     if cache_path.exists() and not force_refresh:
         try:
@@ -1122,7 +1120,8 @@ def build_semantic_blueprint(
     if recursive and scope_paths is None:
         graph = Graph.model_validate(result["graph"])
         domain_nodes = [
-            node for node in graph.nodes
+            node
+            for node in graph.nodes
             if node.kind == "logical_module"
             and not node.parent
             and node.parameters.get("structural_group") is True
@@ -1152,9 +1151,7 @@ def build_semantic_blueprint(
         metadata["recursive_domains_built"] = completed
         metadata["recursive_domains_total"] = len(eligible)
         if len(eligible) > max_domains:
-            recursion_warnings.append(
-                f"递归功能域达到安全预算上限 {max_domains}；其余功能域仍可通过局部重建继续分析。"
-            )
+            recursion_warnings.append(f"递归功能域达到安全预算上限 {max_domains}；其余功能域仍可通过局部重建继续分析。")
         metadata["warnings"] = list(dict.fromkeys([*metadata.get("warnings", []), *recursion_warnings]))
         result["graph"] = graph.model_dump()
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1208,9 +1205,7 @@ def _scope_paths_for_node(root: Path, snapshot: Snapshot, graph: Graph, scope_no
             linked_ids.add(edge.target if edge.source in descendants else edge.source)
     tree = directory_tree(root, max_entries=10000, max_depth=16)
     real_entries = {
-        entry["path"]: entry
-        for entry in tree["entries"]
-        if entry["kind"] == "file" and not entry["sensitive"]
+        entry["path"]: entry for entry in tree["entries"] if entry["kind"] == "file" and not entry["sensitive"]
     }
     for node_id in linked_ids:
         node = nodes.get(node_id)
@@ -1233,7 +1228,8 @@ def _merge_scoped_graph(
         raise AgentExecutionError("局部构建目标在当前图谱中不存在")
     descendants = _descendant_ids(original, scope_node_id)
     protected_assets = {
-        node.id for node in original.nodes
+        node.id
+        for node in original.nodes
         if node.id in descendants and (node.kind == "data_artifact" or node.label == "数据与文件资产")
     }
     remove_ids = descendants - protected_assets
@@ -1254,20 +1250,19 @@ def _merge_scoped_graph(
         retained[updated.id] = updated
 
     structural_ids = {
-        node.id for node in generated.nodes
+        node.id
+        for node in generated.nodes
         if node.kind == "logical_module" and node.parameters.get("structural_group") is True
     }
     generated_ids = {
-        node.id for node in generated.nodes
+        node.id
+        for node in generated.nodes
         if (node.kind == "logical_module" and node.id.startswith("agent:module:"))
         or (
             node.kind in {"code_file", "function", "class", "file"}
             and any(proof.path in set(scope_paths) for proof in node.evidence)
         )
-        or (
-            node.id.startswith("file:")
-            and node.id[5:] in set(scope_paths)
-        )
+        or (node.id.startswith("file:") and node.id[5:] in set(scope_paths))
     }
     for node in generated.nodes:
         if node.id == scope_node_id or node.id in structural_ids:
@@ -1285,9 +1280,12 @@ def _merge_scoped_graph(
 
     valid_ids = set(retained)
     kept_edges = [
-        edge.model_copy(deep=True) for edge in original.edges
-        if edge.source not in remove_ids and edge.target not in remove_ids
-        and edge.source in valid_ids and edge.target in valid_ids
+        edge.model_copy(deep=True)
+        for edge in original.edges
+        if edge.source not in remove_ids
+        and edge.target not in remove_ids
+        and edge.source in valid_ids
+        and edge.target in valid_ids
     ]
     edge_by_id = {edge.id: edge for edge in kept_edges}
     for edge in generated.edges:
@@ -1351,9 +1349,9 @@ def rebuild_semantic_blueprint_scope(
                 global_cache = {}
     all_paths = _scope_paths_for_node(root, snapshot, existing_graph, scope_node_id)
     python_paths = {
-        path for path in all_paths
-        if Path(path).suffix.lower() == ".py"
-        and any(node.id == "file:" + path for node in snapshot.graph.nodes)
+        path
+        for path in all_paths
+        if Path(path).suffix.lower() == ".py" and any(node.id == "file:" + path for node in snapshot.graph.nodes)
     }
     if len(python_paths) < 2:
         raise AgentExecutionError("当前模块范围内不足 2 个可分析 Python 文件，无法进一步细分；可直接查看其源码证据。")
@@ -1372,15 +1370,18 @@ def rebuild_semantic_blueprint_scope(
         if node and node.parent and node.parent in static_nodes and node.parent not in selected_ids:
             selected_ids.add(node.parent)
             pending.append(node.parent)
-    scoped_snapshot = snapshot.model_copy(update={
-        "graph": Graph(
-            nodes=[node.model_copy(deep=True) for node in snapshot.graph.nodes if node.id in selected_ids],
-            edges=[
-                edge.model_copy(deep=True) for edge in snapshot.graph.edges
-                if edge.source in selected_ids and edge.target in selected_ids
-            ],
-        )
-    })
+    scoped_snapshot = snapshot.model_copy(
+        update={
+            "graph": Graph(
+                nodes=[node.model_copy(deep=True) for node in snapshot.graph.nodes if node.id in selected_ids],
+                edges=[
+                    edge.model_copy(deep=True)
+                    for edge in snapshot.graph.edges
+                    if edge.source in selected_ids and edge.target in selected_ids
+                ],
+            )
+        }
+    )
     generated_result = build_semantic_blueprint(
         root,
         scoped_snapshot,
@@ -1391,18 +1392,23 @@ def rebuild_semantic_blueprint_scope(
     )
     generated_graph = Graph.model_validate(generated_result["graph"])
     merged = _merge_scoped_graph(
-        existing_graph, generated_graph, scope_node_id,
-        int(generated_result.get("metadata", {}).get("analyzed_files", 0)), all_paths,
+        existing_graph,
+        generated_graph,
+        scope_node_id,
+        int(generated_result.get("metadata", {}).get("analyzed_files", 0)),
+        all_paths,
     )
     metadata = dict(generated_result.get("metadata", {}))
-    metadata.update({
-        "local_rebuild": True,
-        "scope_node_id": scope_node_id,
-        "scope_label": next(node.label for node in existing_graph.nodes if node.id == scope_node_id),
-        "scope_files": len(python_paths),
-        "cache_hit": False,
-        "warnings": list(dict.fromkeys(metadata.get("warnings", []))),
-    })
+    metadata.update(
+        {
+            "local_rebuild": True,
+            "scope_node_id": scope_node_id,
+            "scope_label": next(node.label for node in existing_graph.nodes if node.id == scope_node_id),
+            "scope_files": len(python_paths),
+            "cache_hit": False,
+            "warnings": list(dict.fromkeys(metadata.get("warnings", []))),
+        }
+    )
     # Persist the merged graph so subsequent local rebuilds operate on the latest hierarchy.
     global_cache["graph"] = merged.model_dump()
     global_metadata = global_cache.setdefault("metadata", {})
