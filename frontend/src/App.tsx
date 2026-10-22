@@ -55,12 +55,12 @@ function Card({ data }: NodeProps<Node<CardData>>) {
             type={p.io === "input" ? "target" : "source"}
             position={p.io === "input" ? Position.Left : Position.Right}
             isConnectable={data.editable}
-            title={p.description || "结构连接端口；仅静态证据支持的读写关系显示具体数据类型"}
+            title={p.semantics?.evidence_path ? p.description : "结构性接口；当前没有足够的源码证据确定具体数据类型"}
           />
           <button
             className="nodrag"
             onClick={() => data.choose(data.item.id, p)}
-            title={p.description || "输入输出端口；数据对象以源码静态证据为准"}
+            title={p.semantics?.evidence_path ? p.description : "结构接口；系统会在识别到可信源码依据时补充数据对象与类型"}
           >
             {p.label || p.id}
             {p.data_type && <em>{p.data_type}</em>}
