@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .models import Evidence, Graph, Node
-from .scanner import directory_tree, safe_file
+from .scanner import safe_file
 
 STAGE_WORDS = {
     "input": ("read", "load", "dataset", "schema", "contract", "parse", "ingest"),
@@ -128,7 +128,10 @@ def _read_small_document(root: Path, path: str) -> dict[str, Any] | None:
         if file.suffix.lower() == ".json":
             data = json.loads(file.read_text(encoding="utf-8"))
         else:
-            import tomllib
+            try:
+                import tomllib
+            except ImportError:
+                return None  # tomllib is available only on Python >= 3.11
             data = tomllib.loads(file.read_text(encoding="utf-8"))
     except (OSError, ValueError, UnicodeError):
         return None
