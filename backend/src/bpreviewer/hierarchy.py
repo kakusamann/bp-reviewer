@@ -2,6 +2,7 @@
 
 All paths are derived from the local static index, not invented by the LLM.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -21,47 +22,52 @@ def _identifier(prefix: str, value: str, used: set[str]) -> str:
     return result
 
 
-def hierarchical_projection(root, nodes: list[Node], edges: list[Edge],
-                            catalog: list[dict], labels: dict,
-                            tree_entries: list[dict]) -> tuple[list[Node], list[Edge], dict]:
+def hierarchical_projection(
+    root, nodes: list[Node], edges: list[Edge], catalog: list[dict], labels: dict, tree_entries: list[dict]
+) -> tuple[list[Node], list[Edge], dict]:
     """Construct root functional domains -> semantic tasks -> verified source files."""
     # Directory fallback nodes in the legacy generator are placeholders, not business functions.
-    dropped = {node.id for node in nodes
-               if node.kind == "logical_module" and node.label.startswith("未分析文件 · ")}
+    dropped = {node.id for node in nodes if node.kind == "logical_module" and node.label.startswith("未分析文件 · ")}
     retained = [node.model_copy(deep=True) for node in nodes if node.id not in dropped]
     used = {node.id for node in retained}
     support_id = _identifier("section", "engineering-support", used)
-    retained.append(Node(
-        id=support_id, label="工程与辅助资源", kind="logical_module",
-        description="测试、脚本、配置与文档。只读证据，可按目录继续展开。",
-        ports=[Port(id="in", io="input"), Port(id="out", io="output")],
-        parameters={"structural_group": True, "confidence": 1.0},
-    ))
+    retained.append(
+        Node(
+            id=support_id,
+            label="工程与辅助资源",
+            kind="logical_module",
+            description="测试、脚本、配置与文档。只读证据，可按目录继续展开。",
+            ports=[Port(id="in", io="input"), Port(id="out", io="output")],
+            parameters={"structural_group": True, "confidence": 1.0},
+        )
+    )
 
-    indexed_files = {node.evidence[0].path: node for node in retained
-                     if node.id.startswith("file:") and node.evidence}
+    indexed_files = {node.evidence[0].path: node for node in retained if node.id.startswith("file:") and node.evidence}
     domain_ids = {}
     for group in catalog:
         key = group["key"]
         domain_id = _identifier("domain", key, used)
         domain_ids[key] = domain_id
         area_label = labels.get(key, {})
-        proofs = [indexed_files[path].evidence[0] for path in group["sample_paths"][:8]
-                  if path in indexed_files]
-        retained.append(Node(
-            id=domain_id,
-            label=area_label.get("label") or group["label"],
-            kind="logical_module",
-            parent=support_id if group["is_support"] else "",
-            ports=[Port(id="in", io="input", label="功能域输入"),
-                   Port(id="out", io="output", label="功能域输出")],
-            parameters={"structural_group": True, "domain_key": key,
-                        "file_count": group["count"],
-                        "confidence": 0.75 if area_label else 0.6},
-            description=area_label.get("description") or
-            "全项目结构识别的候选功能域；展开可查看具体任务与真实文件。",
-            evidence=proofs,
-        ))
+        proofs = [indexed_files[path].evidence[0] for path in group["sample_paths"][:8] if path in indexed_files]
+        retained.append(
+            Node(
+                id=domain_id,
+                label=area_label.get("label") or group["label"],
+                kind="logical_module",
+                parent=support_id if group["is_support"] else "",
+                ports=[Port(id="in", io="input", label="功能域输入"), Port(id="out", io="output", label="功能域输出")],
+                parameters={
+                    "structural_group": True,
+                    "domain_key": key,
+                    "file_count": group["count"],
+                    "confidence": 0.75 if area_label else 0.6,
+                },
+                description=area_label.get("description")
+                or "全项目结构识别的候选功能域；展开可查看具体任务与真实文件。",
+                evidence=proofs,
+            )
+        )
 
     # Determine each semantic submodule's parent from actual member-file evidence.
     module_files: dict[str, list[str]] = {}
@@ -78,9 +84,7 @@ def hierarchical_projection(root, nodes: list[Node], edges: list[Edge],
         if node.kind == "code_file" and node.evidence and node.id.startswith("file:"):
             path = node.evidence[0].path
             if node.parent not in module_parents:
-                retained[i] = node.model_copy(update={
-                    "parent": domain_ids.get(domain_for_path(path), support_id)
-                })
+                retained[i] = node.model_copy(update={"parent": domain_ids.get(domain_for_path(path), support_id)})
         elif node.id in module_parents:
             retained[i] = node.model_copy(update={"parent": module_parents[node.id]})
         elif node.kind == "logical_module" and node.label == "数据与文件资产":
@@ -103,13 +107,23 @@ def hierarchical_projection(root, nodes: list[Node], edges: list[Edge],
         except (ValueError, OSError):
             sha = ""
         id_ = _identifier("source", path, used)
-        retained.append(Node(
-            id=id_, label=path, kind="code_file", parent=parent,
-            description="本地目录中真实存在的源文件；未执行其代码。",
-            evidence=[Evidence(path=path, sha256=sha,
-                               status="STATIC_INFERRED" if sha else "UNVERIFIED",
-                               note="路径来自真实项目目录索引。")],
-        ))
+        retained.append(
+            Node(
+                id=id_,
+                label=path,
+                kind="code_file",
+                parent=parent,
+                description="本地目录中真实存在的源文件；未执行其代码。",
+                evidence=[
+                    Evidence(
+                        path=path,
+                        sha256=sha,
+                        status="STATIC_INFERRED" if sha else "UNVERIFIED",
+                        note="路径来自真实项目目录索引。",
+                    )
+                ],
+            )
+        )
         extra_files += 1
 
     present = {node.id for node in retained}
@@ -136,11 +150,18 @@ def hierarchical_projection(root, nodes: list[Node], edges: list[Edge],
             continue
         if derived_id in known_edges:
             raise ValueError(f"Colliding domain edge ID: {derived_id}")
-        projected_edges.append(Edge(
-            id=derived_id, source=source_domain, target=target_domain,
-            source_port="out", target_port="in", kind=edge.kind,
-            status="UNVERIFIED", evidence=list(edge.evidence),
-        ))
+        projected_edges.append(
+            Edge(
+                id=derived_id,
+                source=source_domain,
+                target=target_domain,
+                source_port="out",
+                target_port="in",
+                kind=edge.kind,
+                status="UNVERIFIED",
+                evidence=list(edge.evidence),
+            )
+        )
         known_edges.add(derived_id)
         domain_connections += 1
 

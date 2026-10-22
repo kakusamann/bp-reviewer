@@ -3,6 +3,7 @@
 The index is deterministic and never executes the inspected project. Files outside
 the Python AST snapshot can be indexed by path and metadata, not source contents.
 """
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -12,8 +13,19 @@ from .models import Snapshot
 
 SOURCE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".sql", ".r", ".jl"}
 SUPPORT_PARTS = {
-    "tests", "test", "docs", "doc", "scripts", ".github", "deploy",
-    "deployment", "config", "configs", "examples", "notebooks", "tools",
+    "tests",
+    "test",
+    "docs",
+    "doc",
+    "scripts",
+    ".github",
+    "deploy",
+    "deployment",
+    "config",
+    "configs",
+    "examples",
+    "notebooks",
+    "tools",
 }
 SUPPORT_LABELS = {
     "tests": "测试与质量验证",
@@ -63,8 +75,9 @@ def fallback_label(key: str) -> str:
 
 def project_catalog(snapshot: Snapshot, entries: list[dict]) -> list[dict]:
     """Group all scan-visible source paths by functional area, not by individual file."""
-    files = {node.evidence[0].path: node for node in snapshot.graph.nodes
-             if node.id.startswith("file:") and node.evidence}
+    files = {
+        node.evidence[0].path: node for node in snapshot.graph.nodes if node.id.startswith("file:") and node.evidence
+    }
     for entry in entries:
         if entry.get("kind") != "file" or entry.get("sensitive"):
             continue
@@ -88,17 +101,20 @@ def project_catalog(snapshot: Snapshot, entries: list[dict]) -> list[dict]:
             node = files[path]
             if node is None:
                 continue
-            symbols.extend(child.label for child in snapshot.graph.nodes
-                           if child.parent == node.id and child.kind == "function")
+            symbols.extend(
+                child.label for child in snapshot.graph.nodes if child.parent == node.id and child.kind == "function"
+            )
             if len(symbols) >= 12:
                 break
-        catalog.append({
-            "key": key,
-            "label": fallback_label(key),
-            "is_support": key.startswith("support:"),
-            "count": len(paths),
-            "paths": paths,
-            "sample_paths": ranked[:10],
-            "sample_symbols": list(dict.fromkeys(symbols))[:12],
-        })
+        catalog.append(
+            {
+                "key": key,
+                "label": fallback_label(key),
+                "is_support": key.startswith("support:"),
+                "count": len(paths),
+                "paths": paths,
+                "sample_paths": ranked[:10],
+                "sample_symbols": list(dict.fromkeys(symbols))[:12],
+            }
+        )
     return sorted(catalog, key=lambda group: (group["is_support"], -group["count"], group["key"]))

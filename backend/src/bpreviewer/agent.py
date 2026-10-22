@@ -263,20 +263,26 @@ def _label_domains(state: BlueprintState) -> dict[str, Any]:
     """One compact MiMo call labels structural areas without uploading source contents."""
     catalog = state["catalog"]
     # Keep a bounded overview; everything beyond this limit retains its deterministic label.
-    payload = {"areas": [
-        {"key": group["key"], "fallback_label": group["label"],
-         "count": group["count"], "sample_paths": group["sample_paths"][:6],
-         "sample_symbols": group["sample_symbols"][:8]}
-        for group in catalog[:40]
-    ]}
+    payload = {
+        "areas": [
+            {
+                "key": group["key"],
+                "fallback_label": group["label"],
+                "count": group["count"],
+                "sample_paths": group["sample_paths"][:6],
+                "sample_symbols": group["sample_symbols"][:8],
+            }
+            for group in catalog[:40]
+        ]
+    }
     if not payload["areas"]:
         return {"domain_labels": {}}
     result = _call_mimo(
         "你是项目架构分析器。基于目录结构、文件名和静态符号为现有功能域命名，"
         "不要臆造代码行为。不得新增、删改 key。优先使用明确的业务功能名称，"
         "不要简单重复文件路径，也不要把代码文件逐个作为模块。"
-        "返回严格 JSON：{\\\"areas\\\":[{\\\"key\\\":string,\\\"label\\\":string,"
-        "\\\"description\\\":string}]}。label 使用简短中文（不超过 16 字），"
+        '返回严格 JSON：{\\"areas\\":[{\\"key\\":string,\\"label\\":string,'
+        '\\"description\\":string}]}。label 使用简短中文（不超过 16 字），'
         "description 不超过 60 汉字，不确定时沿用 fallback_label。",
         payload,
         max_tokens=2000,
@@ -334,13 +340,8 @@ def _select_candidates(state: BlueprintState) -> dict[str, Any]:
     for scored_item in scored:
         key = domain_for_path(scored_item[1])
         pools.setdefault(key, []).append(scored_item)
-    prioritized_keys = [
-        group["key"] for group in state["catalog"]
-        if not group["is_support"] and group["key"] in pools
-    ]
-    prioritized_keys += [
-        key for key in pools if key not in prioritized_keys
-    ]
+    prioritized_keys = [group["key"] for group in state["catalog"] if not group["is_support"] and group["key"] in pools]
+    prioritized_keys += [key for key in pools if key not in prioritized_keys]
     ordered = []
     while any(pools.values()):
         for key in prioritized_keys:
@@ -471,8 +472,11 @@ def _summarize_candidates(state: BlueprintState) -> dict[str, Any]:
 def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
     payload = {
         "project_areas": [
-            {"key": area["key"], "name": state.get("domain_labels", {}).get(area["key"], {}).get("label", area["label"]),
-             "sample_paths": area["sample_paths"][:4]}
+            {
+                "key": area["key"],
+                "name": state.get("domain_labels", {}).get(area["key"], {}).get("label", area["label"]),
+                "sample_paths": area["sample_paths"][:4],
+            }
             for area in state.get("catalog", [])[:40]
         ],
         "files": [
@@ -487,7 +491,7 @@ def _aggregate_modules(state: BlueprintState) -> dict[str, Any]:
                 "evidence_lines": item["evidence_lines"],
             }
             for item in state["summaries"]
-        ]
+        ],
     }
     system_prompt = (
         "你是软件架构师。请将输入中的已分析文件聚合为少量、职责清晰的逻辑功能模块。"
@@ -621,8 +625,12 @@ def _file_io_calls(source: str) -> list[tuple[str, str, int]]:
 
 
 def _build_graph(
-    root: Path, snapshot: Snapshot, summaries: list[dict[str, Any]], proposal: dict[str, Any],
-    state_warnings: list[str], catalog: list[dict[str, Any]] | None = None,
+    root: Path,
+    snapshot: Snapshot,
+    summaries: list[dict[str, Any]],
+    proposal: dict[str, Any],
+    state_warnings: list[str],
+    catalog: list[dict[str, Any]] | None = None,
     domain_labels: dict[str, dict[str, str]] | None = None,
 ) -> tuple[Graph, int, dict[str, Any]]:
     used_ids = {node.id for node in snapshot.graph.nodes}
@@ -996,7 +1004,12 @@ def _build_graph(
     try:
         full_catalog = catalog if catalog is not None else project_catalog(snapshot, tree["entries"])
         new_nodes, new_edges, hierarchy_info = hierarchical_projection(
-            root, new_nodes, new_edges, full_catalog, domain_labels or {}, tree["entries"],
+            root,
+            new_nodes,
+            new_edges,
+            full_catalog,
+            domain_labels or {},
+            tree["entries"],
         )
         graph = Graph(nodes=new_nodes, edges=new_edges)
     except (ValidationError, ValueError) as error:
@@ -1020,8 +1033,13 @@ def _validate_and_build(state: BlueprintState) -> dict[str, Any]:
     root = Path(state["root"]).resolve(strict=True)
     snapshot = Snapshot.model_validate(state["snapshot"])
     graph, _, metadata = _build_graph(
-        root, snapshot, state["summaries"], state["proposal"], state.get("warnings", []),
-        catalog=state["catalog"], domain_labels=state.get("domain_labels", {}),
+        root,
+        snapshot,
+        state["summaries"],
+        state["proposal"],
+        state.get("warnings", []),
+        catalog=state["catalog"],
+        domain_labels=state.get("domain_labels", {}),
     )
     return {"result": {"graph": graph.model_dump(), "metadata": metadata}}
 
