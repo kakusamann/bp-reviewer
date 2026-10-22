@@ -84,7 +84,7 @@ function ProfileInspector({ node, openEvidence }: {
             path: item.path || item.source_path || "", line: item.line || 1,
             status: "STATIC_INFERRED", note: "从项目源码、配置或结果文件提取的静态证据", sha256: "",
           })}>
-          <icon name="file-code" inline size="xs" />查看来源 {item.path || item.source_path}{item.line ? `:${item.line}` : ""}
+          查看来源 {item.path || item.source_path}{item.line ? `:${item.line}` : ""}
         </button>}
       </div>
     ))}</div>;
