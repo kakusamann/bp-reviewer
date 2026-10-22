@@ -29,6 +29,126 @@ import type {
 } from "./types";
 import "@xyflow/react/dist/style.css";
 
+type ProfileEntry = {
+  name?: string;
+  value?: string | number | boolean;
+  source?: string;
+  implementation?: string;
+  path?: string;
+  source_path?: string;
+  line?: number;
+  run_id?: string;
+  model?: string;
+  status?: string;
+  basis?: string;
+  title?: string;
+  summary?: string;
+  functions?: { name: string; path: string; line: number }[];
+};
+type AnalysisProfile = {
+  summary?: string;
+  inputs?: ProfileEntry[];
+  outputs?: ProfileEntry[];
+  workflow?: ProfileEntry[];
+  models?: ProfileEntry[];
+  parameters?: ProfileEntry[];
+  metrics?: ProfileEntry[];
+  runs?: ProfileEntry[];
+  source_files?: string[];
+  limitations?: string[];
+};
+
+function getAnalysisProfile(node: ProjectNode): AnalysisProfile | undefined {
+  const raw = node.parameters?.analysis_profile;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  return raw as AnalysisProfile;
+}
+
+function ProfileInspector({ node, openEvidence }: {
+  node: ProjectNode;
+  openEvidence: (proof: Evidence) => void;
+}) {
+  const [tab, setTab] = useState<"overview" | "parameters" | "results" | "evidence">("overview");
+  const profile = getAnalysisProfile(node);
+  const field = (items: ProfileEntry[] | undefined, empty: string, valueText = false) => {
+    if (!items?.length) return <p className="profile-empty">{empty}</p>;
+    return <div className="profile-entries">{items.slice(0, 25).map((item, i) => (
+      <div className="profile-entry" key={`${item.name || item.title || item.path}-${i}`}>
+        <strong>{item.name || item.title || "已识别条目"}</strong>
+        {valueText && item.value !== undefined && <span className="profile-value">{String(item.value)}</span>}
+        {item.summary && <p>{item.summary}</p>}
+        {(item.source || item.basis) && <small>{item.source || item.basis}</small>}
+        {item.implementation && <small>实现：{item.implementation}</small>}
+        {(item.path || item.source_path) && <button type="button" className="profile-proof"
+          onClick={() => openEvidence({
+            path: item.path || item.source_path || "", line: item.line || 1,
+            status: "STATIC_INFERRED", note: "从项目源码、配置或结果文件提取的静态证据", sha256: "",
+          })}>
+          <icon name="file-code" inline size="xs" />查看来源 {item.path || item.source_path}{item.line ? `:${item.line}` : ""}
+        </button>}
+      </div>
+    ))}</div>;
+  };
+  return <div className="profile-inspector">
+    <div className="profile-tabs" role="group" aria-label="模块分析详情">
+      {([
+        ["overview", "概览"],
+        ["parameters", "技术与参数"],
+        ["results", "结果与指标"],
+        ["evidence", "证据"],
+      ] as const).map(([id, label]) => (
+        <button type="button" key={id} className={tab === id ? "active" : ""}
+          onClick={() => setTab(id)}>{label}</button>
+      ))}
+    </div>
+    {tab === "overview" && <>
+      <h4>模块职责</h4>
+      <p>{node.description || profile?.summary || "已识别模块，尚无更详细的业务摘要。"}</p>
+      <h4>主要处理步骤</h4>
+      {field(profile?.workflow, "暂未识别到可靠的工作流步骤，可查看证据或执行局部 AI 细化。")}
+      <h4>主要输入</h4>
+      {field(profile?.inputs, "尚无能够定位来源的输入数据。")}
+      <h4>主要输出</h4>
+      {field(profile?.outputs, "尚无能够定位来源的输出数据。")}
+    </>}
+    {tab === "parameters" && <>
+      <h4>可用技术／模型</h4>
+      {field(profile?.models, "未从源码找到明确的模型注册或实现信息。")}
+      <p className="profile-note">识别到模型实现 ≠ 已运行该模型。仅呈现可追溯的配置与声明，不在本页面修改目标项目。</p>
+      <h4>关键参数与配置</h4>
+      {field(profile?.parameters, "未定位到可靠配置；一般变量不会自动当作可调整的实验超参数。", true)}
+    </>}
+    {tab === "results" && <>
+      <h4>实验／执行记录</h4>
+      {field(profile?.runs, "尚未找到关联的结果记录，不能推定任何模型已运行。")}
+      <h4>性能或业务指标</h4>
+      {field(profile?.metrics, "尚未找到可解析的指标记录；不会凭源码猜测性能。", true)}
+    </>}
+    {tab === "evidence" && <>
+      <h4>实现位置</h4>
+      {node.evidence.length ? node.evidence.map((proof, i) => (
+        <button key={i} type="button" onClick={() => openEvidence(proof)}>
+          {proof.path}:{proof.line}
+        </button>
+      )) : <p className="profile-empty">当前节点没有直接源码引用；可进入证据层查看文件。</p>}
+      <h4>关联源文件</h4>
+      {(profile?.source_files || []).slice(0, 30).map(path => (
+        <button type="button" key={path} onClick={() => openEvidence({
+          path, line: 1, status: "STATIC_INFERRED", note: "项目实际文件索引", sha256: "",
+        })}>{path}</button>
+      ))}
+      <details className="developer-details">
+        <summary>开发者详情：图谱 ID、端口与原始参数</summary>
+        <code>{node.id}</code>
+        <pre>{JSON.stringify({ ports: node.ports, parameters: node.parameters }, null, 2)}</pre>
+      </details>
+    </>}
+    {profile?.limitations?.length ? <div className="profile-limitations">
+      {profile.limitations.map((item, i) => <p key={i}>{item}</p>)}
+    </div> : null}
+  </div>;
+}
+
 type CardData = {
   item: ProjectNode;
   editable: boolean;
@@ -108,6 +228,10 @@ function Workbench() {
     warnings: string[];
     recursive_domains_built?: number;
     recursive_domains_total?: number;
+    recursive_domains_failed?: number;
+    recursive_outcomes?: { node_id: string; status: string; error: string }[];
+    workflow_profiles?: number;
+    workflow_steps?: number;
     local_rebuild?: boolean;
     scope_label?: string;
     scope_files?: number;
@@ -957,7 +1081,7 @@ function Workbench() {
                   <br />
                   {analysisMeta.local_rebuild
                     ? `局部重建：${analysisMeta.scope_label || "当前模块"}`
-                    : `递归整理功能域：${analysisMeta.recursive_domains_built ?? 0}/${analysisMeta.recursive_domains_total ?? "—"}`}
+                    : `功能域：成功 ${analysisMeta.recursive_domains_built ?? 0} / 发现 ${analysisMeta.recursive_domains_total ?? "—"}；失败 ${analysisMeta.recursive_domains_failed ?? 0}`}
                   <br />
                   AST 数据端口 {analysisMeta.ast_data_ports ?? 0} · 有证据的数据连接 {analysisMeta.ast_data_relations ?? 0}
                   <br />
@@ -1103,35 +1227,26 @@ function Workbench() {
                 <>
                   <strong>{current.label}</strong>
                   <p>{current.description}</p>
-                  <code>{current.id}</code>
-                  <p>证据与实现位置</p>
-                  {current.evidence.map((p, i) => (
-                    <button
-                      key={i}
-                      onClick={() => void showSource(p)}
-                      title={p.sha256}
-                    >
-                      {p.path}:{p.line} · {p.status}
-                    </button>
-                  ))}
-                  <label>
-                    端口（JSON）
-                    <textarea
-                      aria-label="端口 JSON"
-                      readOnly={!editable}
-                      value={portsText}
-                      onChange={(e) => setPortsText(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    参数（JSON）
-                    <textarea
-                      aria-label="参数 JSON"
-                      readOnly={!editable}
-                      value={paramsText}
-                      onChange={(e) => setParamsText(e.target.value)}
-                    />
-                  </label>
+                  {viewMode === "logical" && mode === "As-is" ? (
+                    <ProfileInspector key={current.id} node={current} openEvidence={(proof) => void showSource(proof)} />
+                  ) : (
+                    <>
+                      <p>证据与实现位置</p>
+                      {current.evidence.map((proof, i) => (
+                        <button key={i} onClick={() => void showSource(proof)}>
+                          {proof.path}:{proof.line} · {proof.status}
+                        </button>
+                      ))}
+                      <label>端口（JSON）
+                        <textarea aria-label="端口 JSON" readOnly={!editable}
+                          value={portsText} onChange={(event) => setPortsText(event.target.value)} />
+                      </label>
+                      <label>参数（JSON）
+                        <textarea aria-label="参数 JSON" readOnly={!editable}
+                          value={paramsText} onChange={(event) => setParamsText(event.target.value)} />
+                      </label>
+                    </>
+                  )}
                   {viewMode === "logical" && mode === "As-is" && current.kind === "logical_module" && (
                     <button
                       disabled={busy}
