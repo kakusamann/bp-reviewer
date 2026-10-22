@@ -115,3 +115,6 @@ def test_unanalyzed_files_are_evidence_not_root_logic_nodes(tmp_path):
     assert meta["project_domains"] >= 3
     assert len({node.id for node in graph.nodes}) == len(graph.nodes)
     assert len({edge.id for edge in graph.edges}) == len(graph.edges)
+    graph_ids = {node.id for node in graph.nodes}
+    assert all(not node.parent or node.parent in graph_ids for node in graph.nodes)
+    assert all(edge.source in graph_ids and edge.target in graph_ids for edge in graph.edges)
