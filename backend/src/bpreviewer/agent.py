@@ -1162,3 +1162,206 @@ def build_semantic_blueprint(
         temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
         temporary.replace(cache_path)
     return result
+
+
+def _descendant_ids(graph: Graph, scope_node_id: str) -> set[str]:
+    children: dict[str, list[str]] = {}
+    for node in graph.nodes:
+        if node.parent:
+            children.setdefault(node.parent, []).append(node.id)
+    found: set[str] = set()
+    pending = list(children.get(scope_node_id, []))
+    while pending:
+        node_id = pending.pop()
+        if node_id in found:
+            continue
+        found.add(node_id)
+        pending.extend(children.get(node_id, []))
+    return found
+
+
+def _scope_paths_for_node(root: Path, snapshot: Snapshot, graph: Graph, scope_node_id: str) -> list[str]:
+    """Return verified source/data paths contained in a logical module's current subtree."""
+    nodes = {node.id: node for node in graph.nodes}
+    scope = nodes.get(scope_node_id)
+    if scope is None or scope.kind != "logical_module":
+        raise AgentExecutionError("局部构建目标不存在，或不是逻辑模块")
+    descendants = _descendant_ids(graph, scope_node_id)
+    static_python_paths = {
+        node.evidence[0].path
+        for node in snapshot.graph.nodes
+        if node.id.startswith("file:") and node.evidence and Path(node.evidence[0].path).suffix.lower() == ".py"
+    }
+    paths = {
+        proof.path
+        for node_id in descendants
+        for node in [nodes[node_id]]
+        if node.kind in {"code_file", "file"} or node.id.startswith("file:")
+        for proof in node.evidence
+        if proof.path in static_python_paths
+    }
+    # Include real data artifacts only when a visible data/control edge connects them
+    # to a node inside the selected scope. Never read or upload their contents.
+    linked_ids: set[str] = set()
+    for edge in graph.edges:
+        if edge.source in descendants or edge.target in descendants:
+            linked_ids.add(edge.target if edge.source in descendants else edge.source)
+    tree = directory_tree(root, max_entries=10000, max_depth=16)
+    real_entries = {
+        entry["path"]: entry
+        for entry in tree["entries"]
+        if entry["kind"] == "file" and not entry["sensitive"]
+    }
+    for node_id in linked_ids:
+        node = nodes.get(node_id)
+        if not node or node.kind != "data_artifact":
+            continue
+        path = str(node.parameters.get("path") or (node.evidence[0].path if node.evidence else ""))
+        entry = real_entries.get(path)
+        if entry and entry["extension"] in DATA_SUFFIXES:
+            paths.add(path)
+    return sorted(paths)
+
+
+def _merge_scoped_graph(original: Graph, generated: Graph, scope_node_id: str, analyzed_files: int) -> Graph:
+    """Replace only descendants of a scope; keep ancestors and sibling branches intact."""
+    original_nodes = {node.id: node for node in original.nodes}
+    scope = original_nodes.get(scope_node_id)
+    if scope is None or scope.kind != "logical_module":
+        raise AgentExecutionError("局部构建目标在当前图谱中不存在")
+    descendants = _descendant_ids(original, scope_node_id)
+    protected_assets = {
+        node.id for node in original.nodes
+        if node.id in descendants and (node.kind == "data_artifact" or node.label == "数据与文件资产")
+    }
+    remove_ids = descendants - protected_assets
+
+    retained: dict[str, Node] = {}
+    for node in original.nodes:
+        if node.id in remove_ids:
+            continue
+        updated = node
+        if node.id == scope_node_id:
+            parameters = dict(node.parameters)
+            parameters["last_local_rebuild"] = True
+            parameters["last_rebuild_analyzed_files"] = analyzed_files
+            updated = node.model_copy(update={"parameters": parameters})
+        elif node.parent in remove_ids:
+            # Data artifacts may be retained while their old asset container is rebuilt.
+            updated = node.model_copy(update={"parent": scope_node_id})
+        retained[updated.id] = updated
+
+    structural_ids = {
+        node.id for node in generated.nodes
+        if node.kind == "logical_module" and node.parameters.get("structural_group") is True
+    }
+    for node in generated.nodes:
+        if node.id == scope_node_id or node.id in structural_ids:
+            continue
+        if node.kind == "data_artifact" or node.label == "数据与文件资产":
+            continue
+        parent = node.parent
+        if parent in structural_ids or (parent and parent not in {item.id for item in generated.nodes}):
+            parent = scope_node_id
+        if parent == node.id:
+            raise AgentExecutionError(f"局部构建生成了自引用父节点：{node.id}")
+        retained[node.id] = node.model_copy(update={"parent": parent})
+
+    valid_ids = set(retained)
+    kept_edges = [
+        edge.model_copy(deep=True) for edge in original.edges
+        if edge.source not in remove_ids and edge.target not in remove_ids
+        and edge.source in valid_ids and edge.target in valid_ids
+    ]
+    edge_by_id = {edge.id: edge for edge in kept_edges}
+    for edge in generated.edges:
+        if edge.source in structural_ids or edge.target in structural_ids:
+            continue
+        if edge.source not in valid_ids or edge.target not in valid_ids:
+            continue
+        existing = edge_by_id.get(edge.id)
+        if existing:
+            signature = (existing.source, existing.target, existing.source_port, existing.target_port, existing.kind)
+            candidate = (edge.source, edge.target, edge.source_port, edge.target_port, edge.kind)
+            if signature != candidate:
+                raise AgentExecutionError(f"局部构建产生冲突关系 ID：{edge.id}")
+            continue
+        copied = edge.model_copy(deep=True)
+        kept_edges.append(copied)
+        edge_by_id[copied.id] = copied
+
+    for node in retained.values():
+        if node.parent and node.parent not in valid_ids:
+            raise AgentExecutionError(f"局部构建产生无效父节点：{node.label} -> {node.parent}")
+    for edge in kept_edges:
+        if edge.source not in valid_ids or edge.target not in valid_ids:
+            raise AgentExecutionError(f"局部构建产生无效关系端点：{edge.id}")
+    return Graph(nodes=list(retained.values()), edges=kept_edges)
+
+
+def rebuild_semantic_blueprint_scope(
+    root: Path,
+    snapshot: Snapshot,
+    existing_graph: Graph,
+    scope_node_id: str,
+    state_dir: Path,
+    force_refresh: bool = True,
+) -> dict[str, Any]:
+    """Re-analyze one logical module and atomically replace only its descendants."""
+    root = root.resolve(strict=True)
+    existing_graph = Graph.model_validate(existing_graph)
+    all_paths = _scope_paths_for_node(root, snapshot, existing_graph, scope_node_id)
+    python_paths = {
+        path for path in all_paths
+        if Path(path).suffix.lower() == ".py"
+        and any(node.id == "file:" + path for node in snapshot.graph.nodes)
+    }
+    if len(python_paths) < 2:
+        raise AgentExecutionError("当前模块范围内不足 2 个可分析 Python 文件，无法进一步细分；可直接查看其源码证据。")
+
+    selected_ids = set()
+    static_nodes = {node.id: node for node in snapshot.graph.nodes}
+    for node in snapshot.graph.nodes:
+        if node.id.startswith("file:") and node.id[5:] in python_paths:
+            selected_ids.add(node.id)
+        elif any(proof.path in python_paths for proof in node.evidence):
+            selected_ids.add(node.id)
+    # Preserve any static ancestors required by the selected file/function nodes.
+    pending = list(selected_ids)
+    while pending:
+        node = static_nodes.get(pending.pop())
+        if node and node.parent and node.parent in static_nodes and node.parent not in selected_ids:
+            selected_ids.add(node.parent)
+            pending.append(node.parent)
+    scoped_snapshot = snapshot.model_copy(update={
+        "graph": Graph(
+            nodes=[node.model_copy(deep=True) for node in snapshot.graph.nodes if node.id in selected_ids],
+            edges=[
+                edge.model_copy(deep=True) for edge in snapshot.graph.edges
+                if edge.source in selected_ids and edge.target in selected_ids
+            ],
+        )
+    })
+    generated_result = build_semantic_blueprint(
+        root,
+        scoped_snapshot,
+        state_dir,
+        force_refresh=force_refresh,
+        scope_paths=all_paths,
+        recursive=False,
+    )
+    generated_graph = Graph.model_validate(generated_result["graph"])
+    merged = _merge_scoped_graph(
+        existing_graph, generated_graph, scope_node_id,
+        int(generated_result.get("metadata", {}).get("analyzed_files", 0)),
+    )
+    metadata = dict(generated_result.get("metadata", {}))
+    metadata.update({
+        "local_rebuild": True,
+        "scope_node_id": scope_node_id,
+        "scope_label": next(node.label for node in existing_graph.nodes if node.id == scope_node_id),
+        "scope_files": len(python_paths),
+        "cache_hit": False,
+        "warnings": list(dict.fromkeys(metadata.get("warnings", []))),
+    })
+    return {"graph": merged.model_dump(), "metadata": metadata}
