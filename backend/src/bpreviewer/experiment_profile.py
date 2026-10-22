@@ -103,9 +103,7 @@ def _source_facts(root: Path, path: str) -> dict[str, Any]:
         elif isinstance(node, ast.ClassDef):
             class_name = node.name
             if any(token in class_name.lower() for token in ("model", "network", "encoder", "classifier")):
-                facts["models"].append(
-                    {"name": class_name, "source": "class", "path": path, "line": node.lineno}
-                )
+                facts["models"].append({"name": class_name, "source": "class", "path": path, "line": node.lineno})
             declared = [ast.unparse(base) for base in node.bases]
             decorators = [ast.unparse(decorator) for decorator in node.decorator_list]
             is_contract = (
@@ -114,8 +112,7 @@ def _source_facts(root: Path, path: str) -> dict[str, Any]:
                 or any("dataclass" in decorator for decorator in decorators)
             )
             if is_contract:
-                contract = {"name": class_name, "path": path, "line": node.lineno,
-                            "basis": "实际数据契约类型定义"}
+                contract = {"name": class_name, "path": path, "line": node.lineno, "basis": "实际数据契约类型定义"}
                 facts["stages"].append({**contract, "stage": "input"})
                 facts.setdefault("contracts", []).append(contract)
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
